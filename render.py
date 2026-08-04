@@ -8,6 +8,7 @@ from sources import 분야순서
 REFRESH = 600  # 페이지 자동 새로고침(초). 수집 주기보다 짧게 둘 이유가 없습니다.
 KST = dt.timezone(dt.timedelta(hours=9))
 색인상한 = 14  # 색인에 칩으로 보여 줄 출처 수. 나머지는 "더 보기"로 폅니다.
+본문상한 = 3   # 첫 화면에서 분야마다 보여 줄 기사 수. 나머지는 분야 탭에서 봅니다.
 
 # 분야별 색. 카드 배경·칩 점·분야 제목에 같은 색을 물려 색만으로 구분되게 합니다.
 # 배경에는 아주 옅게(밝을 때 6%, 어두울 때 13%)만 깔아 글자 대비를 해치지 않습니다.
@@ -59,7 +60,9 @@ h1{font-size:20px;font-weight:800;letter-spacing:-.03em}
 .chip[aria-pressed="true"]{background:#c2410c;border-color:#c2410c;color:#fff}
 .chip .n{opacity:.55;font-weight:500;margin-left:4px}
 .chip[aria-pressed="true"] .n{opacity:.8}
-@media(prefers-color-scheme:dark){.chip{border-color:#fff3}}
+.chip .nn{color:#c2410c;font-weight:800;margin-left:4px}
+.chip[aria-pressed="true"] .nn{color:#fff}
+@media(prefers-color-scheme:dark){.chip{border-color:#fff3}.chip .nn{color:#fb7c45}}
 
 .idx{padding:10px 16px 0}
 .idx h3{font-size:12.5px;letter-spacing:.06em;opacity:.42;text-transform:uppercase;
@@ -68,8 +71,17 @@ h1{font-size:20px;font-weight:800;letter-spacing:-.03em}
  padding:6px 2px;text-decoration:underline}
 
 section{padding:24px 16px 0}
-section h2{font-size:15px;font-weight:800;letter-spacing:-.01em;margin-bottom:9px;
- color:var(--tint)}
+section h2{font-size:15px;font-weight:800;letter-spacing:-.01em;color:var(--tint)}
+/* 분야 접기. details 를 쓰면 키보드·스크린리더 동작이 브라우저에서 그냥 따라옵니다. */
+summary{list-style:none;cursor:pointer;display:flex;align-items:center;padding:2px 0 9px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";margin-left:auto;width:7px;height:7px;
+ border-right:2px solid var(--tint);border-bottom:2px solid var(--tint);opacity:.5;
+ transform:rotate(45deg) translate(-3px,-3px);transition:transform .15s}
+details:not([open]) summary::after{transform:rotate(-45deg)}
+.rest{margin-top:9px;width:100%;font:inherit;font-size:13.5px;font-weight:700;
+ color:var(--tint);background:none;border-radius:10px;padding:8px 12px;cursor:pointer;
+ border:1.5px solid color-mix(in srgb,var(--tint) 32%,transparent)}
 ul{list-style:none;display:flex;flex-direction:column;gap:7px}
 /* 분야 색 카드. color-mix 를 못 쓰는 낡은 브라우저에서는 배경만 빠지고 글은 그대로 읽힙니다. */
 li{padding:13px 14px;border-radius:13px;background:transparent;
@@ -102,22 +114,37 @@ footer{padding:34px 16px 0;font-size:12.5px;opacity:.42;line-height:1.75}
 _JS = """
 const q=document.getElementById('q'),clear=document.getElementById('clear'),
  none=document.getElementById('none'),cnt=document.getElementById('cnt'),
- items=[...document.querySelectorAll('li[data-k]')],
  chips=[...document.querySelectorAll('.chip')];
 let 분야=null, 출처=null;
+const 상한=__LIMIT__;
+// 접어 둔 분야는 기억합니다. 페이지가 10분마다 스스로 새로고침하므로
+// 저장하지 않으면 접을 때마다 도로 펼쳐집니다.
+// 사생활 모드에서는 localStorage 가 예외를 던집니다. 여기서 죽으면 검색까지 같이 죽으므로
+// 저장은 실패해도 그냥 넘어갑니다 — 기억을 못 할 뿐 화면은 멀쩡히 돕니다.
+let 접힘=new Set();
+try{ 접힘=new Set(JSON.parse(localStorage.getItem('fold')||'[]')) }catch(e){}
+const 접힘저장=()=>{ try{ localStorage.setItem('fold',JSON.stringify([...접힘])) }catch(e){} };
 
 function 표시(){
   const 말=q.value.trim().toLowerCase();
   clear.style.display=q.value?'block':'none';
+  // 조건이 하나도 없는 첫 화면에서만 분야당 몇 건으로 줄입니다.
+  // 검색·필터 중에는 걸러진 결과를 통째로 보여 줘야 합니다.
+  const 제한=!말&&!분야&&!출처;
   let 보임=0;
-  for(const li of items){
-    const ok=(!말||li.dataset.k.includes(말))
-      &&(!분야||li.dataset.t===분야)&&(!출처||li.dataset.s===출처);
-    li.hidden=!ok; if(ok)보임++;
-  }
-  // 항목이 하나도 안 남은 분야는 제목까지 숨겨 빈 칸이 생기지 않게 합니다.
-  for(const s of document.querySelectorAll('section')){
-    s.hidden=![...s.querySelectorAll('li[data-k]')].some(li=>!li.hidden);
+  for(const s of document.querySelectorAll('section[data-t]')){
+    let 통과=0, 남음=0;
+    for(const li of s.querySelectorAll('li[data-k]')){
+      const ok=(!말||li.dataset.k.includes(말))
+        &&(!분야||li.dataset.t===분야)&&(!출처||li.dataset.s===출처);
+      if(ok&&제한&&통과>=상한){ li.hidden=true; 남음++; 보임++; continue; }
+      li.hidden=!ok; if(ok){ 통과++; 보임++; }
+    }
+    const rest=s.querySelector('.rest');
+    if(rest){ rest.hidden=!남음; rest.textContent='나머지 '+남음+'건 보기'; }
+    // 접힌 분야도 제목은 남겨야 다시 펼 수 있습니다. 검색 중에는 자동으로 폅니다.
+    s.querySelector('details').open=!제한||!접힘.has(s.dataset.t);
+    s.hidden=!통과&&!남음;
   }
   none.style.display=보임?'none':'block';
   cnt.textContent=보임;
@@ -136,6 +163,21 @@ for(const c of chips){
     표시(); window.scrollTo({top:0,behavior:'smooth'});
   };
 }
+// 분야 접기·펼치기. 브라우저 기본 동작을 막고 직접 여닫아야 저장 시점이 어긋나지 않습니다.
+for(const s of document.querySelectorAll('section[data-t]')){
+  const d=s.querySelector('details'), t=s.dataset.t;
+  if(접힘.has(t)) d.open=false;
+  d.querySelector('summary').addEventListener('click',e=>{
+    e.preventDefault();
+    d.open=!d.open;
+    d.open?접힘.delete(t):접힘.add(t);
+    접힘저장();
+  });
+}
+// "나머지 N건 보기" 는 그 분야 탭을 누른 것과 같습니다.
+for(const b of document.querySelectorAll('.rest')) b.onclick=()=>
+  chips.find(c=>c.dataset.kind==='topic'&&c.dataset.val===b.dataset.val).click();
+
 const more=document.getElementById('more'), box=document.getElementById('srcbox');
 if(more) more.onclick=()=>{box.classList.toggle('wrap');
   box.querySelectorAll('.chip').forEach(c=>c.hidden=false);
@@ -165,14 +207,16 @@ def _시각표기(d: dt.datetime | None) -> str:
     return d.strftime("%m-%d %H:%M")
 
 
-def _기사(g: dict, 새것: set) -> str:
+def _기사(g: dict, 새것: set, 숨김: bool = False) -> str:
     e = html.escape
     뱃지 = '<span class="new">NEW</span>' if g["fp"] in 새것 else ""
     부가 = " · ".join(x for x in (e(g["source"]), _시각표기(g["at"])) if x)
     요약 = f'<div class="sum">{e(g["summary"])}</div>' if g.get("summary") else ""
     # data-k = 검색 대상(제목+출처+요약). 미리 소문자로 만들어 두면 걸러낼 때 빠릅니다.
     열쇠 = e(f"{g['title']} {g['source']} {g.get('summary', '')}".lower())
-    return (f'<li data-k="{열쇠}" data-t="{e(g["topic"])}" data-s="{e(g["source"])}">'
+    # 상한을 넘는 기사는 서버에서 미리 감춥니다. 첫 화면이 240건 그렸다가 줄어들면 눈에 띕니다.
+    return (f'<li{" hidden" if 숨김 else ""} '
+            f'data-k="{열쇠}" data-t="{e(g["topic"])}" data-s="{e(g["source"])}">'
             f'<a class="t" href="{e(g["url"])}" target="_blank" rel="noopener">'
             f'{뱃지}{e(g["title"])}</a><div class="sub">{부가}</div>{요약}</li>')
 
@@ -203,19 +247,28 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
     for g in 기사:
         묶음.setdefault(g["topic"], []).append(g)
 
+    신규수 = {분야: sum(1 for g in 묶음.get(분야, []) if g["fp"] in 새것) for 분야 in 분야순서}
+
     본문 = []
     for 분야 in 분야순서:
         목록 = 묶음.get(분야, [])
-        n = sum(1 for g in 목록 if g["fp"] in 새것)
+        n = 신규수[분야]
         머리 = f"{e(분야)} <span style='opacity:.65'>{len(목록)}</span>"
         머리 += f" <span style='color:#c2410c'>+{n}</span>" if n else ""
-        속 = ("".join(_기사(g, 새것) for g in 목록) if 목록
+        속 = ("".join(_기사(g, 새것, 숨김=i >= 본문상한) for i, g in enumerate(목록)) if 목록
               else '<li class="empty">새 소식이 없습니다.</li>')
-        본문.append(f'<section data-t="{e(분야)}"><h2>{머리}</h2><ul>{속}</ul></section>')
+        남음 = max(0, len(목록) - 본문상한)
+        더 = (f'<button class="rest" data-val="{e(분야)}"{"" if 남음 else " hidden"}>'
+              f'나머지 {남음}건 보기</button>')
+        본문.append(f'<section data-t="{e(분야)}"><details open>'
+                    f'<summary><h2>{머리}</h2></summary>'
+                    f'<ul>{속}</ul>{더}</details></section>')
 
     분야칩 = "".join(
         f'<button class="chip" data-kind="topic" data-val="{e(t)}" aria-pressed="false">'
-        f'{e(t)}<span class="n">{len(묶음.get(t, []))}</span></button>' for t in 분야순서)
+        f'{e(t)}<span class="n">{len(묶음.get(t, []))}</span>'
+        + (f'<span class="nn">+{신규수[t]}</span>' if 신규수[t] else "")
+        + '</button>' for t in 분야순서)
     주의 = f"<br>수집 실패: {e(', '.join(실패))}" if 실패 else ""
 
     return f"""<!doctype html>
@@ -235,11 +288,11 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
     <button id="clear" aria-label="지우기">&times;</button>
   </div>
 </header>
-<div class="chips">{분야칩}</div>
+<div class="chips wrap">{분야칩}</div>
 {_색인(기사)}
 {''.join(본문)}
 <div id="none">검색 결과가 없습니다.</div>
 <footer>{갱신.astimezone(KST):%Y-%m-%d %H:%M} 기준 · 1시간마다 자동 갱신 ·
 페이지는 {REFRESH // 60}분마다 스스로 새로고침합니다.{주의}</footer>
-<script>{_JS}</script>
+<script>{_JS.replace("__LIMIT__", str(본문상한))}</script>
 </body></html>"""

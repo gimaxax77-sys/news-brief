@@ -112,6 +112,34 @@ for 분야 in ("AI·클로드", "게임개발"):
 assert "color-mix(in srgb,var(--tint) 6%,transparent)" in 문서, "카드 배경이 아주 옅어야 합니다"
 assert "li.empty{background:none" in 문서, "빈 안내에는 카드를 씌우지 않습니다"
 
+# --- 본문 상한: 분야마다 앞의 몇 건만 보이고 나머지는 감춘 채 실려 있다 ---
+많음 = []
+for i in range(7):
+    x = 기사(f"AI뉴스{i}", "AI·클로드")
+    x["fp"] = collect.지문(x)
+    많음.append(x)
+문서 = render.만들기(많음, {많음[0]["fp"], 많음[5]["fp"]}, [], 지금)
+assert 문서.count('data-k="') == 7, "감춘 기사도 문서에는 실려 있어야 검색에 걸립니다"
+assert 문서.count("<li hidden ") == 7 - render.본문상한, \
+    f"첫 화면에는 {render.본문상한}건만 보여야 합니다"
+assert 문서.index("AI뉴스2") < 문서.index("<li hidden "), "앞의 것부터 보여야 합니다"
+assert f'class="rest" data-val="AI·클로드">나머지 {7 - render.본문상한}건 보기' in 문서, \
+    "나머지를 탭에서 보라는 안내가 없습니다"
+# 상한 이하인 분야에는 안내를 띄우지 않는다
+assert '<button class="rest" data-val="게임개발" hidden>' in 문서, "빈 분야에 안내가 떠 있습니다"
+
+# --- 분야 탭에 신규 건수 ---
+assert '<span class="n">7</span><span class="nn">+2</span>' in 문서, "탭에 신규 건수가 없습니다"
+assert 'data-val="게임개발" aria-pressed="false">게임개발<span class="n">0</span></button>' in 문서, \
+    "신규가 없는 분야에는 +0 을 붙이지 않습니다"
+
+# --- 축소·펼치기 ---
+assert 문서.count("<details open>") == len(분야순서), "분야마다 접을 수 있어야 합니다"
+assert 문서.count("<summary><h2>") == len(분야순서), "제목이 접기 손잡이여야 합니다"
+assert "localStorage" in 문서, "접은 상태를 기억하지 않으면 새로고침마다 풀립니다"
+assert 문서.count("catch(e){}") == 2, "사생활 모드에서 localStorage 예외를 막지 않았습니다"
+assert f"const 상한={render.본문상한};" in 문서, "화면 스크립트에 상한이 안 박혔습니다"
+
 # --- 알림: 키가 없으면 아무 일도 하지 않는다 (망 접속 없음) ---
 보낸것 = []
 원래 = brief.requests.post
@@ -130,4 +158,4 @@ assert "새 소식 20건" in 글 and "전체 100건" in 글, 글
 assert 글.count("\n· ") == brief.알림상한, f"본문에 {brief.알림상한}건만 담아야 합니다"
 assert f"외 {20 - brief.알림상한}건" in 글, "나머지 건수 안내가 없습니다"
 
-print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 알림3")
+print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · 알림3")

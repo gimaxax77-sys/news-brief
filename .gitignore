@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 state.json
 brief_log.txt
+docs/_preview.html

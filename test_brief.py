@@ -149,6 +149,65 @@ assert "localStorage" in 문서, "접은 상태를 기억하지 않으면 새로
 assert 문서.count("catch(e){}") == 2, "사생활 모드에서 localStorage 예외를 막지 않았습니다"
 assert f"const 상한={render.본문상한};" in 문서, "화면 스크립트에 상한이 안 박혔습니다"
 
+# --- 본문 설명 뽑기: 요약할 재료가 있는 것만 남긴다 ---
+import xml.etree.ElementTree as ET  # noqa: E402
+
+import summarize  # noqa: E402
+
+
+def 항목(설명, 제목="테스트 제목입니다"):
+    x = ET.fromstring(f"<item><title>{제목}</title><description>{설명}</description></item>")
+    return collect._설명(x, 제목)
+
+
+# 실제 피드는 태그를 &lt; 로 감싸 넣는다(그래서 XML 로는 글자다). 벗겨 낸 뒤 남아야 한다.
+assert 항목("&lt;p&gt;정부가 1600조원 규모 투자를 앞당기고 제조 AI 전환을 가속한다.&lt;/p&gt;") \
+    == "정부가 1600조원 규모 투자를 앞당기고 제조 AI 전환을 가속한다.", "정상 설명이 안 뽑힙니다"
+# 구글뉴스는 제목을 감싼 링크만 넣는다 — 그걸 본문으로 착각하면 제목을 다시 풀어 쓴 요약이 나온다
+assert 항목('&lt;a href="https://news.google.com/x"&gt;테스트 제목입니다&lt;/a&gt;') == "", \
+    "구글뉴스의 제목 링크를 본문으로 오인했습니다"
+# Hacker News 는 주소만 넣는다 — 빼고 나면 남는 게 없다
+assert 항목("Article URL: https://a.com/x Comments URL: https://b.com/y") == "", \
+    "주소만 있는 설명을 걸러 내지 못했습니다"
+assert len(항목("가" * 900)) == collect.DESC_MAX, "설명 길이 상한이 안 걸립니다"
+
+# --- 요약: 키가 없으면 조용히 넘어가고, 캐시가 있으면 부르지 않는다 (망 접속 없음) ---
+os.environ.pop("ANTHROPIC_API_KEY", None)
+with tempfile.TemporaryDirectory() as work:
+    캐시 = os.path.join(work, "summaries.json")
+    목록 = [기사("설명 있는 것"), 기사("설명 없는 것")]
+    목록[0]["desc"] = "본문이 이만큼 들어 있습니다."
+    목록[1]["desc"] = ""
+    for x in 목록:
+        x["fp"] = collect.지문(x)
+
+    잰것 = summarize.채우기(목록, 캐시)
+    assert all(g["summary"] == "" for g in 목록), "키가 없는데 요약이 붙었습니다"
+    assert 잰것["새로"] == 0 and 잰것["건너뜀"] == 2, f"키가 없으면 아무것도 안 불러야 합니다: {잰것}"
+
+    # 캐시에 있으면 키가 없어도 붙는다 (매시간 다시 부르지 않게 하는 장치)
+    import json as _json
+    with open(캐시, "w", encoding="utf-8") as f:
+        _json.dump({목록[0]["fp"]: "이미 만들어 둔 요약."}, f, ensure_ascii=False)
+    summarize.채우기(목록, 캐시)
+    assert 목록[0]["summary"] == "이미 만들어 둔 요약.", "쌓아 둔 요약을 다시 쓰지 않습니다"
+
+    # 이번에 안 본 기사의 요약은 버린다 — 안 그러면 파일이 계속 커진다
+    summarize.요약저장({"살릴것": "a", "버릴것": "b"}, {"살릴것"}, 캐시)
+    with open(캐시, encoding="utf-8") as f:
+        assert _json.load(f) == {"살릴것": "a"}, "오래된 요약이 안 지워집니다"
+
+# 화면은 요약이 있으면 그리고, 없으면 빈 칸을 만들지 않는다
+요약본 = 기사("요약 붙은 기사")
+요약본["fp"] = collect.지문(요약본)
+요약본["summary"] = "핵심을 한 줄로 적은 문장."
+문서 = render.만들기([요약본], set(), [], 지금)
+assert '<div class="sum">핵심을 한 줄로 적은 문장.</div>' in 문서, "요약이 화면에 안 그려집니다"
+민것 = 기사("요약 없는 기사")
+민것["fp"] = collect.지문(민것)
+assert 'class="sum"' not in render.만들기([민것], set(), [], 지금), \
+    "요약이 없는데 빈 칸을 만들었습니다"
+
 # --- 알림: 키가 없으면 아무 일도 하지 않는다 (망 접속 없음) ---
 보낸것 = []
 원래 = brief.requests.post
@@ -167,4 +226,5 @@ assert "새 소식 20건" in 글 and "전체 100건" in 글, 글
 assert 글.count("\n· ") == brief.알림상한, f"본문에 {brief.알림상한}건만 담아야 합니다"
 assert f"외 {20 - brief.알림상한}건" in 글, "나머지 건수 안내가 없습니다"
 
-print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · 알림3")
+print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
+      "설명4 · 요약6 · 알림3")

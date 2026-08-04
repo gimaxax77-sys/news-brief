@@ -3,6 +3,7 @@ import concurrent.futures as cf
 import datetime as dt
 import email.utils
 import hashlib
+import html
 import json
 import os
 import re
@@ -53,6 +54,29 @@ def _시각(s: str) -> dt.datetime | None:
     return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
 
 
+DESC_MAX = 400  # 요약에 넣을 본문 설명 길이. 길수록 비싸지고, 400자면 첫 문단이 다 들어옵니다.
+
+
+def _설명(it, 제목: str) -> str:
+    """기사 본문 설명을 뽑습니다. 요약할 재료가 없으면 빈 문자열입니다.
+
+    ⛔ 구글뉴스 RSS 는 이 칸에 **제목을 감싼 링크 태그만** 넣습니다(2026-08-04 실측).
+    태그를 벗기면 제목과 매체명이 그대로 나오는데, 그걸 본문으로 착각해 요약에 넣으면
+    제목을 다시 풀어 쓴 문장이 나오고 돈만 나갑니다. 그래서 제목으로 시작하면 버립니다.
+    """
+    원본 = _텍스트(it, "description", "summary", f"{ATOM}summary", f"{ATOM}content", "content")
+    글 = re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", 원본))).strip()
+    벗김 = lambda s: re.sub(r"\W", "", s)[:25]  # noqa: E731  공백·부호를 빼고 앞머리만 견줍니다
+    if not 글 or 벗김(글) == 벗김(제목):
+        return ""
+    # Hacker News 는 "Article URL: … Comments URL: …" 만 넣습니다. 주소를 빼면 남는 게 없습니다.
+    # ⚠ 주소가 든 것만 봅니다. 한국어는 촘촘해서 40자면 온전한 한 문장이라,
+    #   길이만으로 자르면 멀쩡한 설명이 통째로 날아갑니다(실제로 한 번 날렸습니다).
+    if "http" in 글 and len(re.sub(r"https?://\S+", "", 글).strip()) < 40:
+        return ""
+    return 글[:DESC_MAX]
+
+
 def 파싱(body: bytes) -> list[dict]:
     """피드 본문에서 (제목·주소·시각)을 뽑습니다.
 
@@ -73,7 +97,7 @@ def 파싱(body: bytes) -> list[dict]:
         주소 = _텍스트(it, "link", "id", "guid")
         if not 제목 or not 주소.startswith("http"):
             continue
-        out.append({"title": 제목, "url": 주소,
+        out.append({"title": 제목, "url": 주소, "desc": _설명(it, 제목),
                     "at": _시각(_텍스트(it, "pubDate", "published", "updated"))})
     return out
 

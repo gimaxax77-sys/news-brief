@@ -10,6 +10,7 @@ load_dotenv()
 
 from collect import 기록저장, 모으기, 신규만, 이전기록, 지문  # noqa: E402
 from render import 만들기  # noqa: E402
+from summarize import 채우기 as 요약채우기  # noqa: E402
 
 OUT = os.path.join("docs", "index.html")  # GitHub Pages 가 docs/ 를 그대로 서빙합니다.
 알림상한 = 8  # 텔레그램 한 통에 담을 기사 수. 나머지는 건수만 알립니다.
@@ -63,7 +64,11 @@ def main() -> int:
     새것 = 신규만(기사, 본것)
     for g in 기사:
         g["fp"] = 지문(g)
-        g.setdefault("summary", "")
+
+    잰것 = 요약채우기(기사)
+    print(f"  요약: 새로 {잰것['새로']}건 · 재사용 {잰것['재사용']}건 · 건너뜀 {잰것['건너뜀']}건"
+          + (f" · 실패 {잰것['실패']}건" if 잰것["실패"] else "")
+          + (f" · ${잰것['비용']:.4f}" if 잰것["새로"] else ""))
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     tmp = OUT + ".tmp"  # 쓰다 죽어도 이전 화면이 남도록 임시파일에 쓰고 교체합니다.

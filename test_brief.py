@@ -132,10 +132,15 @@ assert f'class="rest" data-val="AI·클로드">나머지 {7 - render.본문상�
 # 상한 이하인 분야에는 안내를 띄우지 않는다
 assert '<button class="rest" data-val="게임개발" hidden>' in 문서, "빈 분야에 안내가 떠 있습니다"
 
-# --- 분야 탭에 신규 건수 ---
-assert '<span class="n">7</span><span class="nn">+2</span>' in 문서, "탭에 신규 건수가 없습니다"
-assert 'data-val="게임개발" aria-pressed="false">게임개발<span class="n">0</span></button>' in 문서, \
+# --- 분야 탭: 신규 건수만. 전체 건수를 넣으면 360px 폰에서 한 줄에 안 들어간다 ---
+assert 'data-val="AI·클로드" aria-pressed="false">AI·클로드<span class="nn">+2</span></button>' \
+    in 문서, "탭에 신규 건수가 없습니다"
+assert 'data-val="게임개발" aria-pressed="false">게임개발</button>' in 문서, \
     "신규가 없는 분야에는 +0 을 붙이지 않습니다"
+assert '<button class="chip"' in 문서 and 'class="n"' not in 문서, \
+    "탭에 전체 건수가 남아 있으면 한 줄에 안 들어갑니다"
+# 전체 건수는 섹션 제목에 남아 있어야 한다
+assert ">AI·클로드 <span style='opacity:.65'>7</span>" in 문서, "섹션 제목의 전체 건수가 없습니다"
 
 # --- 축소·펼치기 ---
 assert 문서.count("<details open>") == len(분야순서), "분야마다 접을 수 있어야 합니다"

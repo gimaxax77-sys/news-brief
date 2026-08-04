@@ -84,12 +84,16 @@ for i, (제, 분, 출) in enumerate([("클로드 신기능", "AI·클로드", "�
 assert 'id="q"' in 문서, "검색창이 없습니다"
 assert 문서.count('data-k="') == 3, "기사마다 검색 열쇠가 있어야 합니다"
 assert 'data-k="클로드 신기능 네이트 "' in 문서, "검색 열쇠에 제목·출처가 함께 담겨야 합니다"
-assert 'data-t="AI·클로드"' in 문서 and 'data-s="TubeFilter"' in 문서, "필터용 속성이 없습니다"
-# 색인: 출처별 건수 (네이트 2 · TubeFilter 1)
-assert 'data-kind="src" data-val="네이트" aria-pressed="false">네이트<span class="n">2' in 문서, \
-    "출처 색인의 건수가 틀립니다"
-assert "출처 2곳" in 문서, "출처 개수 표기가 없습니다"
+assert 'data-t="AI·클로드"' in 문서, "분야 필터용 속성이 없습니다"
 assert 'data-kind="topic"' in 문서, "분야 칩이 없습니다"
+# 출처 색인은 걷어냈다. 출처로 걸러 보고 싶으면 검색창에 치면 된다(열쇠에 담겨 있음).
+assert 'data-kind="src"' not in 문서, "출처 칩이 남아 있습니다"
+assert "출처 2곳" not in 문서, "출처 색인이 남아 있습니다"
+# 검색칸은 헤더 안에 제목과 나란히 있어야 한다
+머리 = 문서[문서.index("<header>"):문서.index("</header>")]
+assert 'id="q"' in 머리 and "<h1>" in 머리, "검색칸이 헤더 밖에 있습니다"
+assert "display:flex" in 문서[문서.index("header{"):문서.index("header{") + 200], \
+    "헤더가 한 줄로 배치되지 않았습니다"
 # 검색 열쇠는 소문자로 미리 만들어 둔다(대소문자 구분 없이 걸리게)
 대문자 = 기사("YouTube Shorts UPDATE", "유튜브·쇼츠", "TubeFilter")
 대문자["fp"] = collect.지문(대문자)

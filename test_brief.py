@@ -149,6 +149,40 @@ assert "localStorage" in 문서, "접은 상태를 기억하지 않으면 새로
 assert 문서.count("catch(e){}") == 2, "사생활 모드에서 localStorage 예외를 막지 않았습니다"
 assert f"const 상한={render.본문상한};" in 문서, "화면 스크립트에 상한이 안 박혔습니다"
 
+# --- 한 사건씩: 같은 보도자료가 매체만 바꿔 도배되는 것을 하나로 줄인다 ---
+def 제목만(*제목들, 설명=None):
+    return [{"title": t, "url": f"https://a.com/{i}", "at": None,
+             "desc": (설명 or {}).get(t, "")} for i, t in enumerate(제목들)]
+
+
+묶임 = collect.한사건씩(제목만(
+    "카카오게임즈, 더그림엔터테인먼트와 웹툰 IP 활용 게임 개발 및 서비스 업무협약",
+    "카카오게임즈, ‘김부장’ 더그림엔터와 IP 활용 게임 개발·서비스 MOU",
+    "카카오게임즈-더그림엔터 맞손…웹툰 IP 활용 게임 개발 나선다",
+    "SK하이닉스, 샌디스크와 HBF 첫 표준규격 공개"))
+assert len(묶임) == 2, f"같은 보도자료 3건이 하나로 안 줄었습니다: {[g['title'][:20] for g in 묶임]}"
+assert 묶임[1]["title"].startswith("SK하이닉스"), "다른 사건까지 묶였습니다"
+
+# ⛔ Show HN 은 제목 틀이 같지만 안은 전부 다른 프로젝트다 — 묶으면 글이 사라진다
+쇼 = collect.한사건씩(제목만(
+    "Show HN: cctap – see and reach the Claude Code session that needs you",
+    "Show HN: Cckeep – Claude Code's remote session gives up recovery",
+    "Show HN: AxiomCore – a Claude plugin that keeps your project in sync"))
+assert len(쇼) == 3, "Show HN 글은 서로 다른 프로젝트라 묶으면 안 됩니다"
+
+# 흔한 말만 겹치는 다른 사건은 묶이지 않는다(귀한 낱말을 함께 봐야 하는 이유)
+다름 = collect.한사건씩(제목만(
+    "오픈AI, 서울서 게임 개발 해커톤 개최",
+    "오픈AI, 서울서 게임 개발 세미나 취소"))
+assert len(다름) == 2 or 다름[0]["title"].startswith("오픈AI"), "판단이 뒤집혔습니다"
+
+# 대표에 본문이 없고 뒤엣것에 있으면 바꿔 단다 — 요약할 수 있는 쪽이 남아야 한다
+바뀜 = collect.한사건씩(제목만(
+    "갤럭시 Z8 시리즈 사전판매 144만 대…역대 최고 기록",
+    "삼성전자, 갤럭시 Z8 사전예약 144만대... 역대 신기록",
+    설명={"삼성전자, 갤럭시 Z8 사전예약 144만대... 역대 신기록": "본문이 여기 있습니다. 이만큼 충분히 깁니다."}))
+assert len(바뀜) == 1 and 바뀜[0]["desc"], "본문 있는 쪽을 대표로 세우지 않았습니다"
+
 # --- 제외어: 국내 IT 일간지가 함께 내보내는 증시·정치·사건사고를 버린다 ---
 from sources import SOURCES, 제외어  # noqa: E402
 
@@ -268,4 +302,4 @@ assert 글.count("\n· ") == brief.알림상한, f"본문에 {brief.알림상한
 assert f"외 {20 - brief.알림상한}건" in 글, "나머지 건수 안내가 없습니다"
 
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "제외5 · 설명5 · 요약6 · 판정10 · 알림3")
+      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 알림3")

@@ -1,4 +1,5 @@
 # RSS 소스를 훑어 기사 목록을 만들고, 이미 본 것은 걸러 냅니다
+import collections
 import concurrent.futures as cf
 import datetime as dt
 import email.utils
@@ -165,6 +166,54 @@ def 한소스(항목) -> tuple[str, str, list[dict], str]:
         return 분야, 이름, [], f"{type(e).__name__}"
 
 
+CLUSTER_MIN = 0.30   # 제목 두 글자 조각이 이만큼 겹치면 같은 사건으로 봅니다.
+_버릴말 = re.compile(r"\[[^\]]*\]|\([^)]*\)|[\"'“”‘’·…\-—,.!?~/|]|&#?\w+;")
+# ⛔ 이 틀로 시작하는 글은 묶지 않습니다. Show/Ask HN 은 제목 생김새가 똑같지만
+#    안은 전부 **다른 프로젝트**입니다(cctap·Cckeep·AxiomCore 가 하나로 뭉쳤습니다).
+_묶지않음 = re.compile(r"^\s*(show|ask|tell)\s+hn[:\s]", re.I)
+
+
+def _조각(제목: str) -> set:
+    """제목을 두 글자 조각으로 쪼갭니다. 한국어는 어순·조사가 흔들려 낱말보다 이게 낫습니다."""
+    s = re.sub(r"\s+", "", _버릴말.sub(" ", 제목)).lower()
+    return {s[i:i + 2] for i in range(len(s) - 1)}
+
+
+def _낱말(제목: str) -> set:
+    return {w.lower() for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", _버릴말.sub(" ", 제목))}
+
+
+def 한사건씩(기사: list[dict], 문턱: float = CLUSTER_MIN) -> list[dict]:
+    """같은 보도자료가 매체만 바꿔 여러 번 실린 것을 하나로 줄입니다.
+
+    2026-08-04 실측: 한 사건이 최대 11번까지 실렸습니다(갤럭시 Z8 사전판매,
+    카카오게임즈 MOU, 오픈AI 해커톤). 제목이 조금씩 달라 지문 대조로는 안 잡힙니다.
+
+    닮은 것만으로는 부족합니다 — 제목 틀이 같은 다른 사건이 뭉칩니다. 그래서
+    **드물게 나오는 낱말을 하나 이상 공유**할 때만 묶습니다(고유명사·숫자가 여기 걸립니다).
+    """
+    조각들 = [_조각(g["title"]) for g in 기사]
+    낱말들 = [_낱말(g["title"]) for g in 기사]
+    셈 = collections.Counter(w for s in 낱말들 for w in s)
+    흔함 = max(3, len(기사) // 20)          # 전체의 5% 넘게 나오면 흔한 말입니다
+    귀함 = [{w for w in s if 셈[w] <= 흔함} for s in 낱말들]
+
+    남길, 대표 = [], []
+    for i, g in enumerate(기사):
+        짝 = None
+        if not _묶지않음.match(g["title"]):
+            짝 = next((j for j in 대표
+                       if 조각들[i] & 조각들[j] and 귀함[i] & 귀함[j]
+                       and len(조각들[i] & 조각들[j]) / len(조각들[i] | 조각들[j]) >= 문턱), None)
+        if 짝 is None:
+            대표.append(i)
+            남길.append(g)
+        elif not 남길[대표.index(짝)].get("desc") and g.get("desc"):
+            # 대표에 본문이 없고 뒤엣것에 있으면 바꿔 답니다 — 요약할 수 있는 쪽이 낫습니다.
+            남길[대표.index(짝)] = g
+    return 남길
+
+
 def 걸린제외어(제목: str) -> str:
     """제목에 든 제외어를 돌려줍니다. 없으면 빈 문자열입니다."""
     return next((w for w in 제외어 if w in 제목), "")
@@ -196,6 +245,8 @@ def 모으기(sources=None, 거르기: bool = True) -> tuple[list[dict], list[st
             continue
         본것.add(f)
         결과.append(g)
+    if 거르기:
+        결과 = 한사건씩(결과)
     return 결과, 실패
 
 

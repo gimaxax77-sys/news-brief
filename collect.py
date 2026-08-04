@@ -78,6 +78,22 @@ def 파싱(body: bytes) -> list[dict]:
     return out
 
 
+def 매체분리(제목: str) -> tuple[str, str]:
+    """구글뉴스 제목 `기사 제목 - 매체명` 을 (제목, 매체명) 으로 나눕니다.
+
+    떼어 내지 않으면 같은 기사가 매체 수만큼 중복으로 올라옵니다(2026-08-04 실측:
+    로이터·재팬타임스가 같은 백악관 회동 기사를 각각 실어 화면에 두 번 나왔음).
+    덤으로 출처가 "구글뉴스(한)" 대신 실제 매체명("네이트")이 됩니다.
+    """
+    if " - " not in 제목:
+        return 제목, ""
+    앞, _, 뒤 = 제목.rpartition(" - ")
+    # 뒤쪽이 지나치게 길면 매체명이 아니라 제목의 일부로 봅니다.
+    if not 앞 or len(뒤) > 30:
+        return 제목, ""
+    return 앞.strip(), 뒤.strip()
+
+
 def 지문(기사: dict) -> str:
     """같은 기사를 다른 소스에서 또 받아도 한 번만 세도록 하는 열쇠.
 
@@ -108,8 +124,12 @@ def 한소스(항목) -> tuple[str, str, list[dict], str]:
         if r.status_code != 200:
             return 분야, 이름, [], f"HTTP {r.status_code}"
         기사들 = 최신만(파싱(r.content))
+        구글 = "news.google.com" in url
         for g in 기사들:
-            g["source"] = 이름
+            매체 = ""
+            if 구글:  # 구글뉴스만 `제목 - 매체명` 형태입니다.
+                g["title"], 매체 = 매체분리(g["title"])
+            g["source"] = 매체 or 이름
             g["topic"] = 분야
         return 분야, 이름, 기사들, ""
     except Exception as e:

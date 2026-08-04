@@ -7,9 +7,9 @@
 | 라이브 | <https://gimaxax77-sys.github.io/news-brief/> |
 | 저장소 | `gimaxax77-sys/news-brief` (공개) |
 | 자동 실행 | 작업 스케줄러 **`AXdata_NewsBrief`** · 매시 05분 |
-| 알림 봇 | `gim_news_brief_bot` · `chat.id=7403671803` |
+| 알림 봇 | 텔레그램 — 봇 토큰·챗ID 는 로컬 `.env` 에만 둡니다(공개 저장소라 여기 안 적습니다) |
 | 로그 | `brief_log.txt` (저장소 제외) |
-| 테스트 | `python -X utf8 -u test_brief.py` → **37항목** |
+| 테스트 | `python -X utf8 -u test_brief.py` → **33항목** |
 
 수집 21소스 · 약 240건 유지 · 1회 5초.
 

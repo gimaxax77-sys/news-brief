@@ -72,6 +72,30 @@ assert "&lt;script&gt;" in 문서, "이스케이프가 안 됐습니다"
 assert 'class="new"' in 문서, "새 기사 뱃지가 없습니다"
 assert "새 소식이 없습니다" in 문서, "기사 없는 분야에 안내가 없어야 할 자리에 없습니다"
 
+# --- 검색·색인 ---
+목록 = []
+for i, (제, 분, 출) in enumerate([("클로드 신기능", "AI·클로드", "네이트"),
+                                 ("유니티 6 출시", "게임개발", "네이트"),
+                                 ("쇼츠 알고리즘", "유튜브·쇼츠", "TubeFilter")]):
+    x = 기사(제, 분, 출)
+    x["fp"] = collect.지문(x)
+    목록.append(x)
+문서 = render.만들기(목록, {목록[0]["fp"]}, [], 지금)
+assert 'id="q"' in 문서, "검색창이 없습니다"
+assert 문서.count('data-k="') == 3, "기사마다 검색 열쇠가 있어야 합니다"
+assert 'data-k="클로드 신기능 네이트 "' in 문서, "검색 열쇠에 제목·출처가 함께 담겨야 합니다"
+assert 'data-t="AI·클로드"' in 문서 and 'data-s="TubeFilter"' in 문서, "필터용 속성이 없습니다"
+# 색인: 출처별 건수 (네이트 2 · TubeFilter 1)
+assert 'data-kind="src" data-val="네이트" aria-pressed="false">네이트<span class="n">2' in 문서, \
+    "출처 색인의 건수가 틀립니다"
+assert "출처 2곳" in 문서, "출처 개수 표기가 없습니다"
+assert 'data-kind="topic"' in 문서, "분야 칩이 없습니다"
+# 검색 열쇠는 소문자로 미리 만들어 둔다(대소문자 구분 없이 걸리게)
+대문자 = 기사("YouTube Shorts UPDATE", "유튜브·쇼츠", "TubeFilter")
+대문자["fp"] = collect.지문(대문자)
+assert 'data-k="youtube shorts update tubefilter' in render.만들기(
+    [대문자], set(), [], 지금), "검색 열쇠가 소문자로 정규화되지 않았습니다"
+
 # --- 알림: 키가 없으면 아무 일도 하지 않는다 (망 접속 없음) ---
 보낸것 = []
 원래 = brief.requests.post

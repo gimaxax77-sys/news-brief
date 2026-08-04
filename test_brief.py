@@ -150,7 +150,7 @@ assert 문서.count("catch(e){}") == 2, "사생활 모드에서 localStorage 예
 assert f"const 상한={render.본문상한};" in 문서, "화면 스크립트에 상한이 안 박혔습니다"
 
 # --- 제외어: 국내 IT 일간지가 함께 내보내는 증시·정치·사건사고를 버린다 ---
-from sources import 제외어  # noqa: E402
+from sources import SOURCES, 제외어  # noqa: E402
 
 assert collect.걸린제외어("카카오페이, 2분기 영업익 528%↑…역대 최대 실적") == "영업익"
 assert collect.걸린제외어("SK하이닉스, 샌디스크와 HBF 첫 표준규격 공개") == "", \
@@ -216,6 +216,28 @@ with tempfile.TemporaryDirectory() as work:
     with open(캐시, encoding="utf-8") as f:
         assert _json.load(f) == {"살릴것": "a"}, "오래된 요약이 안 지워집니다"
 
+# --- 분야 판정: 요약과 같은 호출에서 "분야가 다르다"를 받아 낸다 ---
+# 지시문에 판정을 시키는 말이 살아 있어야 한다. 이게 빠지면 조용히 요약만 하고 끝난다.
+assert summarize.제외표시 in summarize.지시 and "브리핑에 실을 기사인지" in summarize.지시, \
+    "요약 지시문에서 분야 판정이 빠졌습니다"
+assert "애매하면 반드시 싣는다" in summarize.지시, "애매할 때 빼 버리면 멀쩡한 기사가 사라집니다"
+# ⛔ 판정은 「대상 영역」으로만 한다. 형식(실적·투자·판매량)으로 빼기 시작하면
+#    갤럭시 사전판매·정부 AI 조직 신설까지 사라진다 — 실측 정확도가 95%에서 65%로 떨어졌다.
+assert "형식은 보지 않는다" in summarize.지시, "기사 형식으로 빼면 멀쩡한 IT 기사가 날아갑니다"
+assert "싣는 보기:" in summarize.지시 and "빼는 보기:" in summarize.지시,     "경계에 있는 보기를 빼면 판정이 흔들립니다"
+assert summarize.버릴까({"summary": "제외"}), "분야 판정을 못 읽습니다"
+assert summarize.버릴까({"summary": " 제외. "}), "앞뒤 공백·마침표가 붙으면 못 읽습니다"
+assert not summarize.버릴까({"summary": "제외 대상이 된 반도체 장비의 수출 규제가 풀렸다."}), \
+    "요약문이 '제외' 로 시작한다고 기사를 버리면 안 됩니다"
+assert not summarize.버릴까({"summary": ""}), "요약이 없는 기사(구글뉴스)를 버리면 안 됩니다"
+assert not summarize.버릴까({}), "요약 칸이 아예 없어도 죽지 않아야 합니다"
+# 주제가 고정된 전용 피드는 판정 자체를 안 한다. 제목이 "v2.1.221" 뿐인 릴리스 글이
+# "분야 밖" 으로 빠진 실제 사고에서 나온 규칙이다.
+assert summarize.판정면제 <= {이름 for _, 이름, _ in SOURCES},     "판정면제에 없는 소스 이름이 있습니다 — 소스 이름을 바꾸면 면제가 조용히 풀립니다"
+assert not summarize.버릴까({"source": "Claude Code 릴리스", "summary": "제외"}),     "전용 피드까지 분야 판정으로 빼면 안 됩니다"
+assert summarize.요약규칙 in summarize.지시 and summarize.요약규칙 in summarize.지시_요약만,     "두 지시문이 같은 요약 규칙을 써야 결과가 어긋나지 않습니다"
+assert summarize.제외표시 not in summarize.지시_요약만, "면제용 지시문에 판정이 남아 있습니다"
+
 # 화면은 요약이 있으면 그리고, 없으면 빈 칸을 만들지 않는다
 요약본 = 기사("요약 붙은 기사")
 요약본["fp"] = collect.지문(요약본)
@@ -246,4 +268,4 @@ assert 글.count("\n· ") == brief.알림상한, f"본문에 {brief.알림상한
 assert f"외 {20 - brief.알림상한}건" in 글, "나머지 건수 안내가 없습니다"
 
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "제외5 · 설명5 · 요약6 · 알림3")
+      "제외5 · 설명5 · 요약6 · 판정10 · 알림3")

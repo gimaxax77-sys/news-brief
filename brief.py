@@ -10,7 +10,7 @@ load_dotenv()
 
 from collect import 기록저장, 모으기, 신규만, 이전기록, 지문  # noqa: E402
 from render import 만들기  # noqa: E402
-from summarize import 채우기 as 요약채우기  # noqa: E402
+from summarize import 버릴까, 채우기 as 요약채우기  # noqa: E402
 
 OUT = os.path.join("docs", "index.html")  # GitHub Pages 가 docs/ 를 그대로 서빙합니다.
 알림상한 = 8  # 텔레그램 한 통에 담을 기사 수. 나머지는 건수만 알립니다.
@@ -60,15 +60,22 @@ def main() -> int:
         알림("[뉴스 브리핑] 수집에 실패했습니다. 소스가 전부 응답하지 않습니다.")
         return 1
 
-    본것 = 이전기록()
-    새것 = 신규만(기사, 본것)
     for g in 기사:
         g["fp"] = 지문(g)
 
     잰것 = 요약채우기(기사)
+    # 요약하면서 "분야가 다르다"고 판정한 기사는 여기서 뺍니다. 본문을 읽고 내린 판단이라
+    # 제목의 낱말만 보는 제외어보다 정확합니다(제외어는 본문이 없는 기사를 맡습니다).
+    # ⚠ 신규 판정보다 **먼저** 빼야 합니다. 뒤로 미루면 뺀 기사가 알림에 그대로 나갑니다.
+    버린것 = [g for g in 기사 if 버릴까(g)]
+    기사 = [g for g in 기사 if not 버릴까(g)]
     print(f"  요약: 새로 {잰것['새로']}건 · 재사용 {잰것['재사용']}건 · 건너뜀 {잰것['건너뜀']}건"
           + (f" · 실패 {잰것['실패']}건" if 잰것["실패"] else "")
+          + (f" · 분야밖 {len(버린것)}건 뺌" if 버린것 else "")
           + (f" · ${잰것['비용']:.4f}" if 잰것["새로"] else ""))
+
+    본것 = 이전기록()
+    새것 = 신규만(기사, 본것)
 
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     tmp = OUT + ".tmp"  # 쓰다 죽어도 이전 화면이 남도록 임시파일에 쓰고 교체합니다.

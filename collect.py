@@ -11,7 +11,7 @@ import xml.etree.ElementTree as ET
 
 import requests
 
-from sources import SOURCES
+from sources import SOURCES, 제외어
 
 STATE = "state.json"  # 이미 알린 기사 지문. 매 실행마다 갱신됩니다.
 STATE_MAX = 4000      # 지문 보관 개수. 넘으면 오래된 것부터 버립니다.
@@ -69,10 +69,14 @@ def _설명(it, 제목: str) -> str:
     벗김 = lambda s: re.sub(r"\W", "", s)[:25]  # noqa: E731  공백·부호를 빼고 앞머리만 견줍니다
     if not 글 or 벗김(글) == 벗김(제목):
         return ""
-    # Hacker News 는 "Article URL: … Comments URL: …" 만 넣습니다. 주소를 빼면 남는 게 없습니다.
-    # ⚠ 주소가 든 것만 봅니다. 한국어는 촘촘해서 40자면 온전한 한 문장이라,
+    # Hacker News 는 본문 대신 "Article URL: … Comments URL: … Points: 12 # Comments: 3" 만 넣습니다.
+    # 주소만 지우면 라벨이 50자쯤 남아 길이 검사를 통과합니다 — 라벨까지 지우고 재야 합니다.
+    # (2026-08-04: 이 구멍으로 HN 36건이 쓸모없이 요약돼 실행마다 요약분의 24%를 먹었습니다.)
+    남은 = re.sub(r"(Article|Comments)\s+URL:|Points:\s*\d+|#\s*Comments:\s*\d+", "", 글)
+    남은 = re.sub(r"https?://\S+", "", 남은).strip()
+    # ⚠ 주소가 든 것만 길이로 잽니다. 한국어는 촘촘해서 40자면 온전한 한 문장이라,
     #   길이만으로 자르면 멀쩡한 설명이 통째로 날아갑니다(실제로 한 번 날렸습니다).
-    if "http" in 글 and len(re.sub(r"https?://\S+", "", 글).strip()) < 40:
+    if "http" in 글 and len(남은) < 40:
         return ""
     return 글[:DESC_MAX]
 
@@ -161,7 +165,18 @@ def 한소스(항목) -> tuple[str, str, list[dict], str]:
         return 분야, 이름, [], f"{type(e).__name__}"
 
 
-def 모으기(sources=None) -> tuple[list[dict], list[str]]:
+def 걸린제외어(제목: str) -> str:
+    """제목에 든 제외어를 돌려줍니다. 없으면 빈 문자열입니다."""
+    return next((w for w in 제외어 if w in 제목), "")
+
+
+def 버릴것(sources=None) -> list[dict]:
+    """제외어에 걸려 빠지는 기사를 봅니다. 제외어를 늘리기 전에 이걸로 확인하십시오."""
+    기사, _ = 모으기(sources, 거르기=False)
+    return [g for g in 기사 if 걸린제외어(g["title"])]
+
+
+def 모으기(sources=None, 거르기: bool = True) -> tuple[list[dict], list[str]]:
     """모든 소스를 동시에 훑어 (기사 목록, 실패한 소스 이름) 을 돌려줍니다."""
     sources = SOURCES if sources is None else sources
     기사, 실패 = [], []
@@ -176,6 +191,8 @@ def 모으기(sources=None) -> tuple[list[dict], list[str]]:
             tzinfo=dt.timezone.utc), reverse=True):
         f = 지문(g)
         if f in 본것:
+            continue
+        if 거르기 and 걸린제외어(g["title"]):
             continue
         본것.add(f)
         결과.append(g)

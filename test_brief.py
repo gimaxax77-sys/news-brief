@@ -149,6 +149,20 @@ assert "localStorage" in 문서, "접은 상태를 기억하지 않으면 새로
 assert 문서.count("catch(e){}") == 2, "사생활 모드에서 localStorage 예외를 막지 않았습니다"
 assert f"const 상한={render.본문상한};" in 문서, "화면 스크립트에 상한이 안 박혔습니다"
 
+# --- 제외어: 국내 IT 일간지가 함께 내보내는 증시·정치·사건사고를 버린다 ---
+from sources import 제외어  # noqa: E402
+
+assert collect.걸린제외어("카카오페이, 2분기 영업익 528%↑…역대 최대 실적") == "영업익"
+assert collect.걸린제외어("SK하이닉스, 샌디스크와 HBF 첫 표준규격 공개") == "", \
+    "반도체 기사를 버리면 안 됩니다"
+assert collect.걸린제외어("정부 직속 'AI 개발 조직 신설' 초읽기…국무총리훈령 제정") == "", \
+    "AI 정책 기사를 버리면 안 됩니다 — '정부'·'실적' 같은 넓은 말을 넣지 마십시오"
+assert not (set(제외어) & {"정부", "실적", "투자", "매출", "기업", "산업"}), \
+    "IT 기사까지 통째로 지우는 넓은 말이 제외어에 들어갔습니다"
+# 거르기를 끄면 그대로 나온다 — 무엇이 빠지는지 눈으로 확인하는 통로입니다
+막힘 = [{"title": "李대통령, 기업 투자 걸림돌 제거", "url": "https://a.com/1", "at": None}]
+assert collect.걸린제외어(막힘[0]["title"]) == "대통령"
+
 # --- 본문 설명 뽑기: 요약할 재료가 있는 것만 남긴다 ---
 import xml.etree.ElementTree as ET  # noqa: E402
 
@@ -167,8 +181,13 @@ assert 항목("&lt;p&gt;정부가 1600조원 규모 투자를 앞당기고 제�
 assert 항목('&lt;a href="https://news.google.com/x"&gt;테스트 제목입니다&lt;/a&gt;') == "", \
     "구글뉴스의 제목 링크를 본문으로 오인했습니다"
 # Hacker News 는 주소만 넣는다 — 빼고 나면 남는 게 없다
-assert 항목("Article URL: https://a.com/x Comments URL: https://b.com/y") == "", \
-    "주소만 있는 설명을 걸러 내지 못했습니다"
+assert 항목("Article URL: https://a.com/x Comments URL: https://b.com/y "
+          "Points: 120 # Comments: 45") == "", \
+    "Hacker News 의 라벨+주소만 있는 설명을 걸러 내지 못했습니다"
+# 같은 HN 이라도 글 본문이 실려 있으면 요약할 값어치가 있다
+assert 항목("Article URL: https://a.com/x Comments URL: https://b.com/y "
+          "I spent three months rewriting our build system and here is what actually "
+          "broke along the way.") != "", "본문이 실린 HN 글까지 버렸습니다"
 assert len(항목("가" * 900)) == collect.DESC_MAX, "설명 길이 상한이 안 걸립니다"
 
 # --- 요약: 키가 없으면 조용히 넘어가고, 캐시가 있으면 부르지 않는다 (망 접속 없음) ---
@@ -227,4 +246,4 @@ assert 글.count("\n· ") == brief.알림상한, f"본문에 {brief.알림상한
 assert f"외 {20 - brief.알림상한}건" in 글, "나머지 건수 안내가 없습니다"
 
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "설명4 · 요약6 · 알림3")
+      "제외5 · 설명5 · 요약6 · 알림3")

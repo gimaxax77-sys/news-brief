@@ -96,6 +96,22 @@ assert 'data-kind="topic"' in 문서, "분야 칩이 없습니다"
 assert 'data-k="youtube shorts update tubefilter' in render.만들기(
     [대문자], set(), [], 지금), "검색 열쇠가 소문자로 정규화되지 않았습니다"
 
+# --- 분야 색 카드 ---
+from sources import 분야순서  # noqa: E402
+색들 = [render.분야색[t] for t in 분야순서]
+assert len(set(색들)) == len(색들), f"분야마다 다른 색이어야 합니다: {색들}"
+assert set(분야순서) == set(render.분야색), "분야 목록과 색 목록이 어긋납니다"
+규칙 = render._색규칙()
+for 분야 in 분야순서:
+    assert f'li[data-t="{분야}"]' in 규칙, f"{분야} 카드 색 규칙이 없습니다"
+    assert f'.chip[data-kind="topic"][data-val="{분야}"]' in 규칙, f"{분야} 칩 색 규칙이 없습니다"
+assert f"--tint:{render.기본색}" in 규칙, "색을 못 찾은 분야용 기본값이 없습니다"
+문서 = render.만들기(목록, set(), [], 지금)
+for 분야 in ("AI·클로드", "게임개발"):
+    assert f'<section data-t="{분야}"' in 문서, f"{분야} 구역에 색 표시가 없습니다"
+assert "color-mix(in srgb,var(--tint) 6%,transparent)" in 문서, "카드 배경이 아주 옅어야 합니다"
+assert "li.empty{background:none" in 문서, "빈 안내에는 카드를 씌우지 않습니다"
+
 # --- 알림: 키가 없으면 아무 일도 하지 않는다 (망 접속 없음) ---
 보낸것 = []
 원래 = brief.requests.post

@@ -9,6 +9,17 @@ REFRESH = 600  # 페이지 자동 새로고침(초). 수집 주기보다 짧게 
 KST = dt.timezone(dt.timedelta(hours=9))
 색인상한 = 14  # 색인에 칩으로 보여 줄 출처 수. 나머지는 "더 보기"로 폅니다.
 
+# 분야별 색. 카드 배경·칩 점·분야 제목에 같은 색을 물려 색만으로 구분되게 합니다.
+# 배경에는 아주 옅게(밝을 때 6%, 어두울 때 13%)만 깔아 글자 대비를 해치지 않습니다.
+# 색상환에서 멀리 떨어진 넷을 골라 옅어져도 서로 구분됩니다.
+분야색 = {
+    "AI·클로드": "#3b6fd4",    # 파랑
+    "게임개발": "#8b5cf6",      # 보라
+    "유튜브·쇼츠": "#e11d48",   # 빨강
+    "IT이슈": "#0d9488",       # 청록
+}
+기본색 = "#78716c"  # 목록에 없는 분야가 생겨도 무채색으로 나옵니다.
+
 # Pretendard 는 맑은 고딕보다 한글 획이 굵고 자간이 고릅니다. 못 받아 오면
 # 시스템 폰트로 자연스럽게 내려앉으므로 페이지가 깨지지 않습니다.
 _FONT = ("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/"
@@ -57,10 +68,21 @@ h1{font-size:20px;font-weight:800;letter-spacing:-.03em}
  padding:6px 2px;text-decoration:underline}
 
 section{padding:24px 16px 0}
-section h2{font-size:15px;font-weight:800;letter-spacing:-.01em;opacity:.5;margin-bottom:8px}
-ul{list-style:none}
-li{padding:13px 0;border-bottom:1px solid #0001}
-@media(prefers-color-scheme:dark){li{border-color:#ffffff14}}
+section h2{font-size:15px;font-weight:800;letter-spacing:-.01em;margin-bottom:9px;
+ color:var(--tint)}
+ul{list-style:none;display:flex;flex-direction:column;gap:7px}
+/* 분야 색 카드. color-mix 를 못 쓰는 낡은 브라우저에서는 배경만 빠지고 글은 그대로 읽힙니다. */
+li{padding:13px 14px;border-radius:13px;background:transparent;
+ background:color-mix(in srgb,var(--tint) 6%,transparent);
+ border:1px solid color-mix(in srgb,var(--tint) 15%,transparent)}
+@media(prefers-color-scheme:dark){
+ li{background:color-mix(in srgb,var(--tint) 13%,transparent);
+    border-color:color-mix(in srgb,var(--tint) 26%,transparent)}}
+li.empty{background:none;border:0;padding-left:0}
+.chip[data-kind="topic"]::before{content:"";display:inline-block;width:8px;height:8px;
+ border-radius:50%;background:var(--tint);margin-right:6px;vertical-align:.5px}
+.chip[data-kind="topic"][aria-pressed="true"]{background:var(--tint);border-color:var(--tint)}
+.chip[data-kind="topic"][aria-pressed="true"]::before{background:#fff}
 a.t{color:inherit;text-decoration:none;font-size:18px;font-weight:700;line-height:1.45;
  letter-spacing:-.02em;display:block}
 a.t:hover{text-decoration:underline}
@@ -121,6 +143,16 @@ if(more) more.onclick=()=>{box.classList.toggle('wrap');
 """
 
 
+def _색규칙() -> str:
+    """분야마다 `--tint` 를 물려 주는 CSS. 분야를 추가해도 여기서 자동으로 따라옵니다."""
+    줄 = [f":root,section,li{{--tint:{기본색}}}"]
+    for 분야, 색 in 분야색.items():
+        s = html.escape(분야, quote=True)
+        줄.append(f'li[data-t="{s}"],section[data-t="{s}"],'
+                  f'.chip[data-kind="topic"][data-val="{s}"]{{--tint:{색}}}')
+    return "\n".join(줄)
+
+
 def _시각표기(d: dt.datetime | None) -> str:
     if d is None:
         return ""
@@ -179,7 +211,7 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
         머리 += f" <span style='color:#c2410c'>+{n}</span>" if n else ""
         속 = ("".join(_기사(g, 새것) for g in 목록) if 목록
               else '<li class="empty">새 소식이 없습니다.</li>')
-        본문.append(f'<section><h2>{머리}</h2><ul>{속}</ul></section>')
+        본문.append(f'<section data-t="{e(분야)}"><h2>{머리}</h2><ul>{속}</ul></section>')
 
     분야칩 = "".join(
         f'<button class="chip" data-kind="topic" data-val="{e(t)}" aria-pressed="false">'
@@ -192,7 +224,8 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
 <meta http-equiv="refresh" content="{REFRESH}">
 <title>뉴스 브리핑</title>
 <link rel="stylesheet" href="{_FONT}">
-<style>{_CSS}</style></head><body>
+<style>{_CSS}
+{_색규칙()}</style></head><body>
 <header>
   <div class="top"><h1>뉴스 브리핑</h1>
     <div class="meta"><span id="cnt">{len(기사)}</span>건 · 새 소식 {len(새것)}</div></div>

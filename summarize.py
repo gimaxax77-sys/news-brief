@@ -2,6 +2,7 @@
 import concurrent.futures as cf
 import json
 import os
+import re
 
 MODEL = "claude-haiku-4-5"
 CACHE = "summaries.json"   # {지문: 요약}. 같은 기사를 매시간 다시 요약하지 않으려고 둡니다.
@@ -58,6 +59,67 @@ def 버릴까(g: dict) -> bool:
     if g.get("source") in 판정면제:
         return False
     return g.get("summary", "").strip().rstrip(".。") == 제외표시
+
+
+후보배수 = 3   # 알릴 건수의 몇 배를 후보로 올릴지. 넓게 주고 모델이 고르게 합니다.
+후보상한 = 18  # 그래도 이보다 많이는 안 넣습니다. 입력이 커지면 값이 올라갑니다.
+
+핫지시 = (
+    "너는 IT 뉴스 브리핑의 편집장이다. 아래 후보 가운데 **지금 꼭 알려야 할 것**만 고른다.\n"
+    "\n"
+    "고르는 기준\n"
+    "- 새 기술·제품·정책처럼 **판이 바뀌는 소식**을 앞에 둔다.\n"
+    "- 여러 매체가 다뤘다는 것(다룬 매체 수)은 참고만 한다. **기업 보도자료는 매체가 많아도\n"
+    "  대개 뺀다** — 업무협약·행사 개최·수상 소식이 여기 해당한다.\n"
+    "- 비슷한 소식이 여럿이면 하나만 고른다.\n"
+    "- 고를 것이 모자라면 **요청한 수보다 적게 골라도 된다.** 억지로 채우지 않는다.\n"
+    "\n"
+    "출력 형식 — 고른 것마다 한 줄씩, 다른 말은 붙이지 않는다.\n"
+    "번호|왜 지금 중요한지 25자 이내\n"
+    "보기)\n"
+    "3|국내 폴더블 사전판매 최다 기록\n"
+    "7|정부가 AI 전담 조직을 처음 만든다"
+)
+
+
+def 핫뉴스(기사: list[dict], 몇건: int) -> list[dict]:
+    """알릴 기사를 골라 돌려줍니다. 고른 이유는 `g["왜"]` 에 담깁니다.
+
+    ① 다룬 매체 수(`dup`)로 후보를 좁히고 ② 모델이 그중에서 고릅니다.
+    ①만 쓰면 **보도자료 도배가 1위를 차지합니다**(2026-08-04: 카카오게임즈 MOU 12건).
+    """
+    후보 = sorted(기사, key=lambda g: (-g.get("dup", 1), g["title"]))[
+        :min(후보상한, 몇건 * 후보배수)]
+    if len(후보) <= 몇건 or not os.environ.get("ANTHROPIC_API_KEY"):
+        return 후보[:몇건]
+
+    줄 = [f"{i+1}. [{g.get('dup', 1)}개 매체] {g['title']}"
+          + (f" — {g['summary']}" if g.get("summary") else "")
+          for i, g in enumerate(후보)]
+    try:
+        import anthropic
+        m = anthropic.Anthropic().messages.create(
+            model=MODEL, max_tokens=400, system=핫지시,
+            messages=[{"role": "user",
+                       "content": f"후보 {len(후보)}건 중 최대 {몇건}건을 골라라.\n\n"
+                                  + "\n".join(줄)}])
+        답 = "".join(b.text for b in m.content if b.type == "text")
+    except Exception as e:
+        print(f"  (핫뉴스 선별 실패, 보도 수 순으로 대신합니다: {e})")
+        return 후보[:몇건]
+
+    고른것 = []
+    for 줄하나 in 답.splitlines():
+        번호, _, 왜 = 줄하나.partition("|")
+        숫자 = re.match(r"\s*(\d+)", 번호)
+        if not 숫자:
+            continue
+        i = int(숫자.group(1)) - 1
+        if 0 <= i < len(후보) and 후보[i] not in 고른것:
+            후보[i]["왜"] = 왜.strip()
+            고른것.append(후보[i])
+    # 한 건도 못 읽었으면 형식이 어긋난 것입니다. 알림을 거르지 말고 순위대로 냅니다.
+    return 고른것[:몇건] or 후보[:몇건]
 
 
 def 이전요약(path: str = CACHE) -> dict:

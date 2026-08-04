@@ -207,10 +207,16 @@ def 한사건씩(기사: list[dict], 문턱: float = CLUSTER_MIN) -> list[dict]:
                        and len(조각들[i] & 조각들[j]) / len(조각들[i] | 조각들[j]) >= 문턱), None)
         if 짝 is None:
             대표.append(i)
+            g["dup"] = 1
             남길.append(g)
-        elif not 남길[대표.index(짝)].get("desc") and g.get("desc"):
+            continue
+        자리 = 대표.index(짝)
+        묶인수 = 남길[자리]["dup"] + 1
+        if not 남길[자리].get("desc") and g.get("desc"):
             # 대표에 본문이 없고 뒤엣것에 있으면 바꿔 답니다 — 요약할 수 있는 쪽이 낫습니다.
-            남길[대표.index(짝)] = g
+            남길[자리] = g
+        # 몇 매체가 다뤘는지는 그대로 화제성 지표입니다. 핫뉴스를 고를 때 씁니다.
+        남길[자리]["dup"] = 묶인수
     return 남길
 
 

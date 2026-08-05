@@ -93,6 +93,9 @@ li.empty{background:none;border:0;padding-left:0}
 a.t{color:inherit;text-decoration:none;font-size:17px;font-weight:700;line-height:1.34;
  letter-spacing:-.025em;display:block}
 a.t:hover{text-decoration:underline}
+/* 영문 제목 밑에 붙는 한국어 제목. 제목의 일부처럼 보이되 원문보다는 약하게 씁니다. */
+.ko{font-size:14.5px;font-weight:600;opacity:.72;margin-top:3px;line-height:1.38;
+ letter-spacing:-.02em}
 .sub{font-size:12px;opacity:.5;margin-top:2px;font-weight:500}
 .new{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.03em;
  background:#c2410c;color:#fff;border-radius:4px;padding:1px 4px;margin-right:5px;
@@ -240,13 +243,15 @@ def _기사(g: dict, 새것: set, 숨김: bool = False, 분야덮기: str = "",
     # 핫이슈 칸에서는 「왜 지금 중요한지」를 요약 대신 보여 줍니다. 더 짧고 판단에 바로 닿습니다.
     본글 = 한줄 or g.get("summary", "")
     요약 = f'<div class="sum">{e(본글)}</div>' if 본글 else ""
+    # 영문 제목에만 붙는 한국어 제목. 제목 바로 밑에 둡니다 — 출처보다 먼저 눈에 들어와야 합니다.
+    옮김 = f'<div class="ko">{e(g["ko"])}</div>' if g.get("ko") else ""
     # data-k = 검색 대상(제목+출처+요약). 미리 소문자로 만들어 두면 걸러낼 때 빠릅니다.
     열쇠 = e(f"{g['title']} {g['source']} {g.get('summary', '')}".lower())
     # 상한을 넘는 기사는 서버에서 미리 감춥니다. 첫 화면이 240건 그렸다가 줄어들면 눈에 띕니다.
     return (f'<li{" hidden" if 숨김 else ""} '
             f'data-k="{열쇠}" data-t="{e(분야덮기 or g["topic"])}">'
             f'<a class="t" href="{e(g["url"])}" target="_blank" rel="noopener">'
-            f'{뱃지}{e(g["title"])}</a><div class="sub">{부가}</div>{요약}</li>')
+            f'{뱃지}{e(g["title"])}</a>{옮김}<div class="sub">{부가}</div>{요약}</li>')
 
 
 def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.datetime,

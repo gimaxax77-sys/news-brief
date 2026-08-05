@@ -123,6 +123,85 @@ def 핫뉴스(기사: list[dict], 몇건: int) -> list[dict]:
     return 고른것[:몇건] or 후보[:몇건]
 
 
+제목캐시 = "titles.json"   # {지문: 한글 제목}
+제목묶음 = 25              # 한 호출에 몇 개씩 넣을지. 제목은 짧아 묶어 보내는 편이 훨씬 쌉니다.
+_한글 = re.compile(r"[가-힣]")
+
+제목지시 = (
+    "너는 IT 뉴스 제목을 한국어로 옮긴다.\n"
+    "- 제목 그대로 옮긴다. 요약하거나 설명을 보태지 않는다.\n"
+    "- 회사·제품·서비스 이름은 널리 쓰이는 한국어 표기가 있으면 그것을 쓰고,\n"
+    "  없으면 원문 그대로 둔다(예: Anthropic→앤스로픽, Hacker News→Hacker News).\n"
+    "- 40자 이내로 자연스럽게. 직역투를 피한다.\n"
+    "\n"
+    "출력 형식 — 받은 번호마다 한 줄씩, 다른 말은 붙이지 않는다.\n"
+    "번호|한국어 제목"
+)
+
+
+def 옮길것(g: dict) -> bool:
+    """제목에 한글이 하나도 없고 한글 요약도 못 붙은 기사인지.
+
+    요약이 붙은 카드에는 이미 한국어 한 줄이 있습니다. 거기에 제목 번역까지 넣으면
+    같은 말이 두 줄이 됩니다(2026-08-05 실측: 영문 제목 111건 중 80건이 여기 해당).
+    """
+    return not _한글.search(g["title"]) and not g.get("summary")
+
+
+def 제목옮기기(기사: list[dict], path: str = 제목캐시) -> dict:
+    """`g["ko"]` 에 한국어 제목을 채웁니다. 실패해도 화면은 그대로 돕니다."""
+    잰것 = {"새로": 0, "재사용": 0, "비용": 0.0}
+    try:
+        with open(path, encoding="utf-8") as f:
+            캐시 = json.load(f)
+    except (OSError, ValueError):
+        캐시 = {}
+    for g in 기사:
+        g["ko"] = 캐시.get(g["fp"], "")
+
+    할것 = [g for g in 기사 if 옮길것(g) and not g["ko"]]
+    잰것["재사용"] = sum(1 for g in 기사 if g["ko"])
+    if 할것 and os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            import anthropic
+            client = anthropic.Anthropic()
+            덩이 = [할것[i:i + 제목묶음] for i in range(0, len(할것), 제목묶음)]
+
+            def 한덩이(묶음):
+                본문 = "\n".join(f"{i+1}. {g['title']}" for i, g in enumerate(묶음))
+                m = client.messages.create(model=MODEL, max_tokens=60 * len(묶음),
+                                           system=제목지시,
+                                           messages=[{"role": "user", "content": 본문}])
+                답 = "".join(b.text for b in m.content if b.type == "text")
+                return 묶음, 답, m.usage.input_tokens, m.usage.output_tokens
+
+            with cf.ThreadPoolExecutor(max_workers=동시) as pool:
+                for fut in cf.as_completed([pool.submit(한덩이, d) for d in 덩이]):
+                    묶음, 답, i, o = fut.result()
+                    잰것["in"] = 잰것.get("in", 0) + i
+                    잰것["out"] = 잰것.get("out", 0) + o
+                    for 줄 in 답.splitlines():
+                        # ⛔ `번호|글` 만 받으면 안 됩니다 — 입력을 "1. 제목" 으로 번호 매겨
+                        #    보내면 모델이 그 형식을 따라 "1. 번역" 으로 답합니다.
+                        #    그러면 25건짜리 묶음이 통째로 버려집니다(2026-08-05 실측).
+                        m = re.match(r"\s*(\d+)\s*[|.):\-]\s*(.+)$", 줄)
+                        if not m:
+                            continue
+                        k = int(m.group(1)) - 1
+                        if 0 <= k < len(묶음):
+                            캐시[묶음[k]["fp"]] = m.group(2).strip()
+                            잰것["새로"] += 1
+        except Exception as e:
+            print(f"  (제목 번역 실패, 원문 그대로 둡니다: {e})")
+
+    for g in 기사:
+        g["ko"] = 캐시.get(g["fp"], "")
+    잰것["비용"] = (잰것.get("in", 0) / 1e6 * 단가["in"]
+                 + 잰것.get("out", 0) / 1e6 * 단가["out"])
+    요약저장(캐시, {g["fp"] for g in 기사}, path)   # 이번에 본 기사 것만 남깁니다
+    return 잰것
+
+
 핫캐시 = "hot.json"   # {지문: {"왜": ..., "at": ISO}}. 화면 맨 위 핫이슈 칸을 채웁니다.
 핫유지 = 12           # 몇 시간 전에 뽑힌 것까지 핫이슈로 둘지. 밤 8시간 공백을 덮습니다.
 핫표시 = 10           # 화면에 한꺼번에 보일 최대 건수

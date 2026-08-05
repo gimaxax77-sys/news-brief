@@ -3,6 +3,8 @@ import datetime as dt
 import os
 import tempfile
 
+import re
+
 import collect
 import render
 import brief
@@ -374,6 +376,47 @@ assert "scrollTo" in 전체로, "맨 위로 올려 주지 않으면 돌아온 �
 assert "position:fixed" in 규칙 and "right:14px" in 규칙, "오른쪽 아래에 고정되지 않았습니다"
 assert "env(safe-area-inset-bottom)" in 규칙, "아이폰 홈바에 가릴 수 있습니다"
 
+# --- 영문 제목 한글 번역: 한글이 한 줄도 없는 카드에만 붙인다 ---
+assert summarize.옮길것({"title": "Anthropic Inks $10 Billion Deal", "summary": ""}),     "영문 제목인데 요약도 없으면 옮겨야 합니다"
+assert not summarize.옮길것({"title": "Anthropic Inks $10 Billion Deal",
+                          "summary": "앤스로픽이 100억 달러 계약을 맺었다."}),     "요약이 있으면 이미 한글 한 줄이 있습니다 — 같은 말이 두 줄이 됩니다"
+assert not summarize.옮길것({"title": "갤럭시 Z8 사전판매 144만대", "summary": ""}),     "한글 제목을 다시 옮기면 안 됩니다"
+assert not summarize.옮길것({"title": "Claude Code v2.1.221 릴리스", "summary": ""}),     "한글이 섞여 있으면 이미 읽힙니다"
+
+# 키가 없으면 조용히 넘어가고, 캐시에 있으면 부르지 않는다 (망 접속 없음)
+os.environ.pop("ANTHROPIC_API_KEY", None)
+with tempfile.TemporaryDirectory() as work:
+    tp = os.path.join(work, "titles.json")
+    영문 = 기사("Anthropic Inks $10 Billion Deal")
+    영문["fp"] = collect.지문(영문)
+    영문["summary"] = ""
+    잰것 = summarize.제목옮기기([영문], tp)
+    assert 영문["ko"] == "" and 잰것["새로"] == 0, "키가 없는데 번역을 시도했습니다"
+    import json as _j
+    with open(tp, "w", encoding="utf-8") as f:
+        _j.dump({영문["fp"]: "앤스로픽, 100억 달러 계약"}, f, ensure_ascii=False)
+    summarize.제목옮기기([영문], tp)
+    assert 영문["ko"] == "앤스로픽, 100억 달러 계약", "쌓아 둔 번역을 다시 쓰지 않습니다"
+
+    # ⛔ 모델은 입력 번호 형식을 따라 한다 — "1|글" 만 받으면 묶음이 통째로 버려진다
+    묶음줄 = re.compile(r"\s*(\d+)\s*[|.):\-]\s*(.+)$")
+    for 꼴 in ("3|앤스로픽, 100억 달러 계약", "3. 앤스로픽, 100억 달러 계약",
+             "3) 앤스로픽, 100억 달러 계약", " 3 - 앤스로픽, 100억 달러 계약"):
+        m = 묶음줄.match(꼴)
+        assert m and m.group(1) == "3" and m.group(2).startswith("앤스로픽"), f"못 읽음: {꼴}"
+    import inspect
+    assert 묶음줄.pattern in inspect.getsource(summarize.제목옮기기),         "번호 형식을 넓게 받는 정규식이 코드에 없습니다"
+
+    # 화면: 제목 바로 밑, 출처 줄보다 앞에 온다
+    문서 = render.만들기([영문], set(), [], 지금)
+    assert '<div class="ko">앤스로픽, 100억 달러 계약</div>' in 문서, "번역이 화면에 안 나옵니다"
+    assert 문서.index('class="ko"') < 문서.index('class="sub"'),         "번역은 출처 줄보다 먼저 나와야 제목의 일부로 읽힙니다"
+    assert ".ko{" in 문서, "번역 줄 서식이 없습니다"
+    # 번역이 없으면 빈 칸을 만들지 않는다
+    민것2 = 기사("한글 제목 기사")
+    민것2["fp"] = collect.지문(민것2)
+    assert 'class="ko"' not in render.만들기([민것2], set(), [], 지금),         "번역이 없는데 빈 줄을 만들었습니다"
+
 # --- 알림: 키가 없으면 아무 일도 하지 않는다 (망 접속 없음) ---
 보낸것 = []
 원래 = brief.requests.post
@@ -386,4 +429,4 @@ assert 보낸것 == [], "키가 없는데 전송했습니다"
 brief.requests.post = 원래
 
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 뒤로9 · 알림1")
+      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 뒤로9 · 번역15 · 알림1")

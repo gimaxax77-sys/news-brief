@@ -10,7 +10,8 @@ load_dotenv()
 
 from collect import 기록저장, 모으기, 신규만, 이전기록, 지문  # noqa: E402
 from render import 만들기  # noqa: E402
-from summarize import 버릴까, 핫기록, 핫뉴스, 채우기 as 요약채우기  # noqa: E402
+from summarize import (버릴까, 제목옮기기, 핫기록, 핫뉴스,  # noqa: E402
+                       채우기 as 요약채우기)
 
 OUT = os.path.join("docs", "index.html")  # GitHub Pages 가 docs/ 를 그대로 서빙합니다.
 KST = dt.timezone(dt.timedelta(hours=9))
@@ -94,6 +95,12 @@ def main() -> int:
           + (f" · 실패 {잰것['실패']}건" if 잰것["실패"] else "")
           + (f" · 분야밖 {len(버린것)}건 뺌" if 버린것 else "")
           + (f" · ${잰것['비용']:.4f}" if 잰것["새로"] else ""))
+
+    # 요약이 못 붙은 영문 제목에만 한국어 제목을 답니다(요약이 있으면 이미 한글이 한 줄 있습니다).
+    옮긴것 = 제목옮기기(기사)
+    if 옮긴것["새로"] or 옮긴것["재사용"]:
+        print(f"  제목번역: 새로 {옮긴것['새로']}건 · 재사용 {옮긴것['재사용']}건"
+              + (f" · ${옮긴것['비용']:.4f}" if 옮긴것["새로"] else ""))
 
     본것 = 이전기록()
     새것 = 신규만(기사, 본것)

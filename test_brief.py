@@ -133,10 +133,13 @@ assert f'class="rest" data-val="AI·클로드">나머지 {7 - render.본문상�
 assert '<button class="rest" data-val="게임개발" hidden>' in 문서, "빈 분야에 안내가 떠 있습니다"
 
 # --- 분야 탭: 신규 건수만. 전체 건수를 넣으면 360px 폰에서 한 줄에 안 들어간다 ---
-assert 'data-val="AI·클로드" aria-pressed="false">AI·클로드<span class="nn">+2</span></button>' \
-    in 문서, "탭에 신규 건수가 없습니다"
+# 탭이 다섯이라 긴 이름은 탭에서만 줄여 쓴다. data-val 은 원래 이름이어야 필터가 걸린다.
+assert 'data-val="AI·클로드" aria-pressed="false">AI<span class="nn">+2</span></button>' \
+    in 문서, "탭에 신규 건수가 없거나 이름을 안 줄였습니다"
 assert 'data-val="게임개발" aria-pressed="false">게임개발</button>' in 문서, \
     "신규가 없는 분야에는 +0 을 붙이지 않습니다"
+assert render._탭이름("유튜브·쇼츠") == "유튜브" and render._탭이름("IT이슈") == "IT이슈"
+assert set(render.탭줄임) <= set(분야순서), "탭줄임에 없는 분야 이름이 있습니다"
 assert '<button class="chip"' in 문서 and 'class="n"' not in 문서, \
     "탭에 전체 건수가 남아 있으면 한 줄에 안 들어갑니다"
 # 전체 건수는 섹션 제목에 남아 있어야 한다
@@ -314,6 +317,47 @@ assert "9개 매체" in 글, "몇 개 매체가 다뤘는지 안 보입니다"
 assert "나머지 1건" in 글, "못 담은 건수를 안내하지 않습니다"
 assert "밤새 있었던 일" in brief.알림문(골라짐, 후보, 200, None, 아침=True),     "아침 알림은 8시간치라는 것이 드러나야 합니다"
 
+# --- 핫이슈 칸: 맨 위에 오고, 첫 탭이고, 원래 분야에도 그대로 남는다 ---
+핫들 = []
+for i in range(3):
+    x = 기사(f"핫뉴스{i}", "AI·클로드")
+    x["fp"] = collect.지문(x)
+    핫들.append(x)
+보통 = 기사("보통 기사", "게임개발")
+보통["fp"] = collect.지문(보통)
+쌓인핫 = {핫들[0]["fp"]: {"왜": "판이 바뀌는 소식", "at": "2026-08-05T03:00:00+00:00"},
+        핫들[1]["fp"]: {"왜": "", "at": "2026-08-05T01:00:00+00:00"}}
+문서 = render.만들기(핫들 + [보통], set(), [], 지금, 쌓인핫)
+
+# ⚠ 문서 전체에서 찾으면 안 된다 — 같은 문자열이 위쪽 CSS(색 규칙)에도 있어 순서가 뒤집힌다
+칩 = '<button class="chip" data-kind="topic" data-val='
+assert 문서.index('<section data-t="핫이슈"') < 문서.index('<section data-t="AI·클로드"'), \
+    "핫이슈 칸이 맨 위에 있어야 진입하자마자 보입니다"
+assert 문서.index(칩 + '"핫이슈"') < 문서.index(칩 + '"AI·클로드"'), "핫이슈가 첫 탭이어야 합니다"
+assert '<div class="sum">판이 바뀌는 소식</div>' in 문서,     "핫이슈 카드에는 「왜 중요한지」가 요약 대신 들어갑니다"
+# 최근에 뽑힌 것이 위로 온다
+assert 문서.index("핫뉴스0") < 문서.index("핫뉴스1"), "핫이슈는 최근에 뽑힌 순서여야 합니다"
+# 원래 분야 칸에서 빼면 분야 탭을 눌렀을 때 큰 뉴스가 사라진다
+assert 문서.count("핫뉴스0") >= 2, "핫이슈 기사가 원래 분야 칸에서 빠졌습니다"
+assert 문서.count('<section data-t=') == len(분야순서) + 1, "핫이슈 칸이 하나 더 있어야 합니다"
+# 핫이슈가 없으면 칸도 탭도 안 만든다
+빈것 = render.만들기(핫들, set(), [], 지금, {})
+assert '<section data-t="핫이슈"' not in 빈것 and 칩 + '"핫이슈"' not in 빈것, \
+    "핫이슈가 없는데 빈 칸을 만들었습니다"
+# 색이 네 분야 어느 것과도 겹치지 않아야 구분이 된다
+assert render.핫색 not in render.분야색.values(), "핫이슈 색이 분야 색과 겹칩니다"
+assert f'.chip[data-val="핫이슈"]' in render._색규칙(), "핫이슈 탭이 눌리기 전에도 눈에 띄어야 합니다"
+
+# 쌓기: 오래된 핫이슈는 버린다
+import datetime as _dt  # noqa: E402
+with tempfile.TemporaryDirectory() as work:
+    hp = os.path.join(work, "hot.json")
+    이른때 = 지금 - _dt.timedelta(hours=summarize.핫유지 + 1)
+    summarize.핫기록([{**핫들[2], "왜": "옛것"}], 이른때, hp)
+    남은 = summarize.핫기록([{**핫들[0], "왜": "새것"}], 지금, hp)
+    assert 핫들[0]["fp"] in 남은 and 핫들[2]["fp"] not in 남은,         f"{summarize.핫유지}시간 지난 핫이슈가 안 빠졌습니다: {남은}"
+    assert 남은[핫들[0]["fp"]]["왜"] == "새것"
+
 # --- 알림: 키가 없으면 아무 일도 하지 않는다 (망 접속 없음) ---
 보낸것 = []
 원래 = brief.requests.post
@@ -326,4 +370,4 @@ assert 보낸것 == [], "키가 없는데 전송했습니다"
 brief.requests.post = 원래
 
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 알림1")
+      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 알림1")

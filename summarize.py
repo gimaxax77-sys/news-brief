@@ -1,5 +1,6 @@
 # 기사에 한국어 한 줄 요약을 붙입니다 (Claude Haiku · 결과는 파일에 쌓아 두고 재사용)
 import concurrent.futures as cf
+import datetime as dt
 import json
 import os
 import re
@@ -120,6 +121,40 @@ def 핫뉴스(기사: list[dict], 몇건: int) -> list[dict]:
             고른것.append(후보[i])
     # 한 건도 못 읽었으면 형식이 어긋난 것입니다. 알림을 거르지 말고 순위대로 냅니다.
     return 고른것[:몇건] or 후보[:몇건]
+
+
+핫캐시 = "hot.json"   # {지문: {"왜": ..., "at": ISO}}. 화면 맨 위 핫이슈 칸을 채웁니다.
+핫유지 = 12           # 몇 시간 전에 뽑힌 것까지 핫이슈로 둘지. 밤 8시간 공백을 덮습니다.
+핫표시 = 10           # 화면에 한꺼번에 보일 최대 건수
+
+
+def 핫기록(고른것: list[dict], 지금: dt.datetime, path: str = 핫캐시) -> dict:
+    """이번에 고른 핫뉴스를 쌓고, 오래된 것은 버린 뒤 전체를 돌려줍니다.
+
+    알림에 나간 것이 곧 핫이슈입니다. 화면용으로 따로 부르지 않으므로 추가 비용이 없습니다.
+    """
+    try:
+        with open(path, encoding="utf-8") as f:
+            쌓인것 = json.load(f)
+    except (OSError, ValueError):
+        쌓인것 = {}
+
+    for g in 고른것:
+        쌓인것[g["fp"]] = {"왜": g.get("왜", "") or g.get("summary", ""),
+                          "at": 지금.isoformat()}
+    기준 = 지금 - dt.timedelta(hours=핫유지)
+    남길 = {}
+    for fp, v in 쌓인것.items():
+        try:
+            if dt.datetime.fromisoformat(v["at"]) >= 기준:
+                남길[fp] = v
+        except (KeyError, ValueError, TypeError):
+            continue   # 모양이 깨진 항목은 조용히 버립니다
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(남길, f, ensure_ascii=False, indent=0, sort_keys=True)
+    os.replace(tmp, path)
+    return 남길
 
 
 def 이전요약(path: str = CACHE) -> dict:

@@ -4,6 +4,7 @@ import html
 import json
 
 from sources import 분야순서
+from summarize import 핫표시
 
 REFRESH = 600  # 페이지 자동 새로고침(초). 수집 주기보다 짧게 둘 이유가 없습니다.
 KST = dt.timezone(dt.timedelta(hours=9))
@@ -19,6 +20,7 @@ KST = dt.timezone(dt.timedelta(hours=9))
     "IT이슈": "#0d9488",       # 청록
 }
 기본색 = "#78716c"  # 목록에 없는 분야가 생겨도 무채색으로 나옵니다.
+핫색 = "#ea580c"    # 핫이슈 — 네 분야 어느 색과도 겹치지 않는 주황입니다.
 
 # Pretendard 는 맑은 고딕보다 한글 획이 굵고 자간이 고릅니다. 못 받아 오면
 # 시스템 폰트로 자연스럽게 내려앉으므로 페이지가 깨지지 않습니다.
@@ -175,10 +177,14 @@ for(const b of document.querySelectorAll('.rest')) b.onclick=()=>
 def _색규칙() -> str:
     """분야마다 `--tint` 를 물려 주는 CSS. 분야를 추가해도 여기서 자동으로 따라옵니다."""
     줄 = [f":root,section,li{{--tint:{기본색}}}"]
-    for 분야, 색 in 분야색.items():
+    for 분야, 색 in {**분야색, 핫이슈: 핫색}.items():
         s = html.escape(분야, quote=True)
         줄.append(f'li[data-t="{s}"],section[data-t="{s}"],'
                   f'.chip[data-kind="topic"][data-val="{s}"]{{--tint:{색}}}')
+    # 핫이슈 탭은 누르기 전에도 눈에 띄어야 합니다. 첫 탭인 것만으로는 약합니다.
+    줄.append(f'.chip[data-val="{html.escape(핫이슈, quote=True)}"]'
+              f'{{background:color-mix(in srgb,{핫색} 12%,transparent);'
+              f'border-color:color-mix(in srgb,{핫색} 38%,transparent)}}')
     return "\n".join(줄)
 
 
@@ -194,21 +200,36 @@ def _시각표기(d: dt.datetime | None) -> str:
     return d.strftime("%m-%d %H:%M")
 
 
-def _기사(g: dict, 새것: set, 숨김: bool = False) -> str:
+핫이슈 = "핫이슈"   # 맨 위에 오는 가짜 분야. 실제 분야는 기사마다 그대로 남아 있습니다.
+
+# 탭이 다섯이 되면 360px 폰 한 줄에 안 들어갑니다. 탭에서만 짧게 씁니다 —
+# 섹션 제목과 카드의 분야 색은 원래 이름 그대로입니다.
+탭줄임 = {"AI·클로드": "AI", "유튜브·쇼츠": "유튜브"}
+
+
+def _탭이름(분야: str) -> str:
+    return 탭줄임.get(분야, 분야)
+
+
+def _기사(g: dict, 새것: set, 숨김: bool = False, 분야덮기: str = "",
+        한줄: str = "") -> str:
     e = html.escape
     뱃지 = '<span class="new">NEW</span>' if g["fp"] in 새것 else ""
     부가 = " · ".join(x for x in (e(g["source"]), _시각표기(g["at"])) if x)
-    요약 = f'<div class="sum">{e(g["summary"])}</div>' if g.get("summary") else ""
+    # 핫이슈 칸에서는 「왜 지금 중요한지」를 요약 대신 보여 줍니다. 더 짧고 판단에 바로 닿습니다.
+    본글 = 한줄 or g.get("summary", "")
+    요약 = f'<div class="sum">{e(본글)}</div>' if 본글 else ""
     # data-k = 검색 대상(제목+출처+요약). 미리 소문자로 만들어 두면 걸러낼 때 빠릅니다.
     열쇠 = e(f"{g['title']} {g['source']} {g.get('summary', '')}".lower())
     # 상한을 넘는 기사는 서버에서 미리 감춥니다. 첫 화면이 240건 그렸다가 줄어들면 눈에 띕니다.
     return (f'<li{" hidden" if 숨김 else ""} '
-            f'data-k="{열쇠}" data-t="{e(g["topic"])}">'
+            f'data-k="{열쇠}" data-t="{e(분야덮기 or g["topic"])}">'
             f'<a class="t" href="{e(g["url"])}" target="_blank" rel="noopener">'
             f'{뱃지}{e(g["title"])}</a><div class="sub">{부가}</div>{요약}</li>')
 
 
-def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.datetime) -> str:
+def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.datetime,
+         핫: dict | None = None) -> str:
     e = html.escape
     묶음 = {분야: [] for 분야 in 분야순서}
     for g in 기사:
@@ -217,6 +238,25 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
     신규수 = {분야: sum(1 for g in 묶음.get(분야, []) if g["fp"] in 새것) for 분야 in 분야순서}
 
     본문 = []
+
+    # 핫이슈를 맨 위에 둡니다. 알림으로 이미 나간 것과 같은 목록이라 따로 부르지 않습니다.
+    # 원래 분야 칸에도 그대로 남깁니다 — 여기서 빼면 분야 탭을 눌렀을 때 큰 뉴스가 사라집니다.
+    핫목록 = []
+    if 핫:
+        핫목록 = sorted((g for g in 기사 if g["fp"] in 핫),
+                      key=lambda g: 핫[g["fp"]].get("at", ""), reverse=True)[:핫표시]
+    if 핫목록:
+        속 = "".join(_기사(g, 새것, 숨김=i >= 본문상한, 분야덮기=핫이슈,
+                          한줄=핫[g["fp"]].get("왜"))
+                    for i, g in enumerate(핫목록))
+        남음 = max(0, len(핫목록) - 본문상한)
+        더 = (f'<button class="rest" data-val="{e(핫이슈)}"{"" if 남음 else " hidden"}>'
+              f'나머지 {남음}건 보기</button>')
+        본문.append(f'<section data-t="{e(핫이슈)}"><details open>'
+                    f'<summary><h2>{e(핫이슈)} '
+                    f"<span style='opacity:.65'>{len(핫목록)}</span></h2></summary>"
+                    f'<ul>{속}</ul>{더}</details></section>')
+
     for 분야 in 분야순서:
         목록 = 묶음.get(분야, [])
         n = 신규수[분야]
@@ -231,12 +271,15 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
                     f'<summary><h2>{머리}</h2></summary>'
                     f'<ul>{속}</ul>{더}</details></section>')
 
-    # 탭에는 분야명과 신규 수만. 전체 건수까지 넣으면 폰 한 줄(375px)에 넷이 안 들어갑니다.
+    # 탭에는 분야명과 신규 수만. 전체 건수까지 넣으면 폰 한 줄(360px)에 안 들어갑니다.
     # 전체 건수는 바로 아래 섹션 제목에 그대로 있습니다.
+    # 핫이슈가 첫 탭입니다. 다섯이 한 줄에 들어가도록 긴 두 이름을 줄여 씁니다(_탭이름).
+    칩들 = ([(핫이슈, len(핫목록))] if 핫목록 else []) + [(t, 신규수[t]) for t in 분야순서]
     분야칩 = "".join(
-        f'<button class="chip" data-kind="topic" data-val="{e(t)}" aria-pressed="false">{e(t)}'
-        + (f'<span class="nn">+{신규수[t]}</span>' if 신규수[t] else "")
-        + '</button>' for t in 분야순서)
+        f'<button class="chip" data-kind="topic" data-val="{e(t)}" aria-pressed="false">'
+        f'{e(_탭이름(t))}'
+        + (f'<span class="nn">+{n}</span>' if n and t != 핫이슈 else "")
+        + '</button>' for t, n in 칩들)
     주의 = f"<br>수집 실패: {e(', '.join(실패))}" if 실패 else ""
 
     return f"""<!doctype html>

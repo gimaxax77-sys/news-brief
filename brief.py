@@ -10,7 +10,7 @@ load_dotenv()
 
 from collect import 기록저장, 모으기, 신규만, 이전기록, 지문  # noqa: E402
 from render import 만들기  # noqa: E402
-from summarize import 버릴까, 핫뉴스, 채우기 as 요약채우기  # noqa: E402
+from summarize import 버릴까, 핫기록, 핫뉴스, 채우기 as 요약채우기  # noqa: E402
 
 OUT = os.path.join("docs", "index.html")  # GitHub Pages 가 docs/ 를 그대로 서빙합니다.
 KST = dt.timezone(dt.timedelta(hours=9))
@@ -98,17 +98,22 @@ def main() -> int:
     본것 = 이전기록()
     새것 = 신규만(기사, 본것)
 
+    # 알림에 나갈 핫뉴스를 먼저 고릅니다 — 같은 목록이 화면 맨 위 「핫이슈」 칸이 됩니다.
+    # 화면용으로 따로 부르지 않으므로 추가 비용이 없습니다.
+    핫 = 핫뉴스(새것, 아침상한 if 아침 else 주간상한) if 새것 else []
+    쌓인핫 = 핫기록(핫, 지금)
+
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     tmp = OUT + ".tmp"  # 쓰다 죽어도 이전 화면이 남도록 임시파일에 쓰고 교체합니다.
     with open(tmp, "w", encoding="utf-8", newline="\n") as f:
-        f.write(만들기(기사, {지문(g) for g in 새것}, 실패, 지금))
+        f.write(만들기(기사, {지문(g) for g in 새것}, 실패, 지금, 쌓인핫))
     os.replace(tmp, OUT)
 
     print(f"[{한국시:%Y-%m-%d %H:%M} KST] 전체 {len(기사)}건 · 새 소식 {len(새것)}건 · "
           f"실패 {len(실패)}개 → {OUT}")
     if 새것:
-        핫 = 핫뉴스(새것, 아침상한 if 아침 else 주간상한)
-        print(f"  알림: {'밤새 있었던 일' if 아침 else '핫뉴스'} {len(핫)}건 골랐습니다")
+        print(f"  알림: {'밤새 있었던 일' if 아침 else '핫뉴스'} {len(핫)}건 "
+              f"· 화면 핫이슈 칸 {len(쌓인핫)}건")
         알림(알림문(핫, 새것, len(기사), os.environ.get("BRIEF_URL"), 아침))
     기록저장(기사, 본것)
     return 0

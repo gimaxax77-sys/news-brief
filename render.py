@@ -103,12 +103,22 @@ mark{background:#fde68a;color:#000;border-radius:2px;padding:0 1px}
 .empty{opacity:.42;font-size:14px;padding:4px 0}
 #none{display:none;padding:30px 16px;text-align:center;opacity:.5;font-size:15px}
 footer{padding:20px 10px 0;font-size:12px;opacity:.4;line-height:1.7}
+/* 분야를 고르거나 검색 중일 때만 뜨는 「전체로」 단추. 한 분야만 보고 있으면
+   맨 위 탭까지 올라가야 빠져나올 수 있어서, 손가락이 닿는 오른쪽 아래에 둡니다.
+   safe-area 를 더해 아이폰 홈바에 가리지 않게 합니다. */
+#back{position:fixed;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:5;
+ font:inherit;font-size:14px;font-weight:700;color:#fff;background:#292524ee;
+ border:0;border-radius:99px;padding:12px 16px;min-height:44px;cursor:pointer;
+ box-shadow:0 3px 14px #0004;backdrop-filter:blur(6px)}
+#back[hidden]{display:none}
+@media (prefers-color-scheme:dark){#back{background:#e7e5e4ee;color:#1c1917}}
 """
 
 # 검색·색인 동작. 240건 정도는 단순 순회로 즉시 걸러집니다.
 _JS = """
 const q=document.getElementById('q'),clear=document.getElementById('clear'),
  none=document.getElementById('none'),cnt=document.getElementById('cnt'),
+ back=document.getElementById('back'),
  chips=[...document.querySelectorAll('.chip')];
 let 분야=null;
 const 상한=__LIMIT__;
@@ -142,11 +152,22 @@ function 표시(){
   }
   none.style.display=보임?'none':'block';
   cnt.textContent=보임;
+  // 첫 화면(조건 없음)에서는 돌아갈 곳이 없으므로 숨깁니다.
+  back.hidden=제한;
+  back.textContent=분야?'← 전체 보기':'← 검색 지우기';
 }
 q.addEventListener('input',표시);
 // 한글은 조합이 끝나는 시점에 한 번 더 훑어야 마지막 글자가 반영됩니다.
 q.addEventListener('compositionend',표시);
 clear.onclick=()=>{q.value='';표시();q.focus()};
+
+// 「전체로」 — 분야 선택과 검색어를 한꺼번에 풀고 맨 위로 올립니다.
+const 전체로=()=>{
+  분야=null; q.value='';
+  for(const o of chips) o.setAttribute('aria-pressed','false');
+  표시(); window.scrollTo({top:0,behavior:'smooth'});
+};
+back.onclick=전체로;
 
 for(const c of chips){
   c.onclick=()=>{
@@ -302,7 +323,8 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
 <div class="chips">{분야칩}</div>
 {''.join(본문)}
 <div id="none">검색 결과가 없습니다.</div>
-<footer>{갱신.astimezone(KST):%Y-%m-%d %H:%M} 기준 · 1시간마다 자동 갱신 ·
+<button id="back" hidden aria-label="전체 목록으로 돌아가기">← 전체 보기</button>
+<footer>{갱신.astimezone(KST):%Y-%m-%d %H:%M} 기준 · 2시간마다 자동 갱신 ·
 페이지는 {REFRESH // 60}분마다 스스로 새로고침합니다.{주의}</footer>
 <script>{_JS.replace("__LIMIT__", str(본문상한))}</script>
 </body></html>"""

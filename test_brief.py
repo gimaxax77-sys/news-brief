@@ -358,6 +358,22 @@ with tempfile.TemporaryDirectory() as work:
     assert 핫들[0]["fp"] in 남은 and 핫들[2]["fp"] not in 남은,         f"{summarize.핫유지}시간 지난 핫이슈가 안 빠졌습니다: {남은}"
     assert 남은[핫들[0]["fp"]]["왜"] == "새것"
 
+# --- 뒤로가기 플로팅 단추: 분야를 고르면 뜨고, 첫 화면에서는 숨는다 ---
+문서 = render.만들기(목록, set(), [], 지금)
+assert '<button id="back" hidden' in 문서, "첫 화면에서는 단추가 숨어 있어야 합니다"
+assert 'aria-label="전체 목록으로 돌아가기"' in 문서, "읽어 주는 이름이 없습니다"
+assert "back.hidden=제한" in 문서, "조건이 있을 때만 뜨게 하는 코드가 없습니다"
+assert "const 전체로=" in 문서 and "back.onclick=전체로" in 문서, "누를 때 할 일이 안 붙었습니다"
+# 분야와 검색어를 **함께** 풀어야 한다. 하나만 풀면 화면이 그대로 걸러진 채 남는다
+전체로 = 문서[문서.index("const 전체로="):문서.index("back.onclick")]
+assert "분야=null" in 전체로 and "q.value=''" in 전체로, "분야와 검색어를 함께 풀지 않습니다"
+assert "aria-pressed','false'" in 전체로, "탭 눌림 표시를 안 풀면 탭이 켜진 채 남습니다"
+assert "scrollTo" in 전체로, "맨 위로 올려 주지 않으면 돌아온 티가 안 납니다"
+# 오른쪽 아래 고정 + 아이폰 홈바 회피
+규칙 = 문서[문서.index("#back{"):문서.index("#back{") + 220]
+assert "position:fixed" in 규칙 and "right:14px" in 규칙, "오른쪽 아래에 고정되지 않았습니다"
+assert "env(safe-area-inset-bottom)" in 규칙, "아이폰 홈바에 가릴 수 있습니다"
+
 # --- 알림: 키가 없으면 아무 일도 하지 않는다 (망 접속 없음) ---
 보낸것 = []
 원래 = brief.requests.post
@@ -370,4 +386,4 @@ assert 보낸것 == [], "키가 없는데 전송했습니다"
 brief.requests.post = 원래
 
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 알림1")
+      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 뒤로9 · 알림1")

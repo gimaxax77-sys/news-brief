@@ -15,6 +15,20 @@ MAX_TOKENS = 120
 
 제외표시 = "제외"  # 모델이 이 한 마디만 돌려주면 그 기사는 화면에서 뺍니다.
 
+# ⛔ 길이 규칙을 아래 요약 지시문에 세게 넣으면 **판정까지 조여집니다.**
+#    2026-08-08 실측(같은 기사 30건) — 「50자를 넘기지 않는다」를 넣자 분야 밖 판정이
+#    8건 → 15건으로 늘었고, 그중 5건은 우리 분야인데 잘못 뺀 것이었습니다
+#    (Claude 플러그인·AI 챗봇 기사 등). 방화벽 문구를 넣어도 3건이 샜습니다.
+#    그래서 **판정 호출은 그대로 두고, 길어진 것만 따로 한 번 더 불러 줄입니다.**
+#    실측 효과 — 평균 51.3→46.8자 · 최대 73→58자 · 60자 초과 5건→0건 · 과잉 배제 0건.
+줄임한계 = 60      # 요약이 이보다 길면 한 번 더 불러 줄입니다
+줄임지시 = (
+    "받은 한국어 문장을 **50자 이내 한 문장**으로 줄인다.\n"
+    "- 배경 설명·수식어·부연을 지운다. 수치와 고유명사는 반드시 남긴다.\n"
+    "- 새 사실을 보태지 않는다. 있는 말만 줄인다.\n"
+    "- 줄인 문장만 출력한다. 다른 말을 붙이지 않는다."
+)
+
 요약규칙 = (
     "한국어 한 문장으로 핵심만 뽑는다.\n"
     "   - 60자 이내. 한 문장. 마침표로 끝낸다.\n"
@@ -66,14 +80,20 @@ def 버릴까(g: dict) -> bool:
 후보상한 = 18  # 그래도 이보다 많이는 안 넣습니다. 입력이 커지면 값이 올라갑니다.
 
 핫지시 = (
-    "너는 IT 뉴스 브리핑의 편집장이다. 아래 후보 가운데 **지금 꼭 알려야 할 것**만 고른다.\n"
+    "너는 IT 뉴스 브리핑의 편집장이다. 아래 후보 가운데 **못 보면 아쉬울 것**만 고른다.\n"
     "\n"
-    "고르는 기준\n"
-    "- 새 기술·제품·정책처럼 **판이 바뀌는 소식**을 앞에 둔다.\n"
-    "- 여러 매체가 다뤘다는 것(다룬 매체 수)은 참고만 한다. **기업 보도자료는 매체가 많아도\n"
-    "  대개 뺀다** — 업무협약·행사 개최·수상 소식이 여기 해당한다.\n"
-    "- 비슷한 소식이 여럿이면 하나만 고른다.\n"
-    "- 고를 것이 모자라면 **요청한 수보다 적게 골라도 된다.** 억지로 채우지 않는다.\n"
+    "⛔ 요청한 수를 채우려 하지 마라. 기준에 맞는 것이 2건이면 2건만, 없으면 하나도 고르지 않는다.\n"
+    "\n"
+    "고르는 기준 — 다음 중 하나에 **분명히** 해당해야 고른다.\n"
+    "- 판이 바뀌는 소식: 새 기술 공개, 실제 출시, 정책 확정, 대형 인수, 중대한 보안 사고.\n"
+    "- 규모 자체가 뉴스인 것: 조 단위 투자, 기록적인 판매량.\n"
+    "\n"
+    "⛔ 다룬 매체가 아무리 많아도 고르지 않는 것\n"
+    "- 기업 보도자료 — 업무협약(MOU)·행사 개최·수상·후원·전시 참가·지원사업 선정.\n"
+    "- 인사·조직 개편, 지역 협력, 사내 행사.\n"
+    "- 아직 일어나지 않은 것 — 예고·전망·기대·루머·「검토 중」.\n"
+    "- 의견·칼럼·리뷰·할인 정보.\n"
+    "- 같은 사건이 여럿이면 가장 구체적인 하나만.\n"
     "\n"
     "출력 형식 — 고른 것마다 한 줄씩, 다른 말은 붙이지 않는다.\n"
     "번호|왜 지금 중요한지 25자 이내\n"
@@ -105,6 +125,9 @@ def 핫뉴스(기사: list[dict], 몇건: int) -> list[dict]:
                        "content": f"후보 {len(후보)}건 중 최대 {몇건}건을 골라라.\n\n"
                                   + "\n".join(줄)}])
         답 = "".join(b.text for b in m.content if b.type == "text")
+        # 이 호출은 로그에 값이 안 찍혀 **월 비용 집계에서 통째로 빠져 있었습니다**(2026-08-08).
+        비용 = (m.usage.input_tokens / 1e6 * 단가["in"]
+              + m.usage.output_tokens / 1e6 * 단가["out"])
     except Exception as e:
         print(f"  (핫뉴스 선별 실패, 보도 수 순으로 대신합니다: {e})")
         return 후보[:몇건]
@@ -119,8 +142,14 @@ def 핫뉴스(기사: list[dict], 몇건: int) -> list[dict]:
         if 0 <= i < len(후보) and 후보[i] not in 고른것:
             후보[i]["왜"] = 왜.strip()
             고른것.append(후보[i])
-    # 한 건도 못 읽었으면 형식이 어긋난 것입니다. 알림을 거르지 말고 순위대로 냅니다.
-    return 고른것[:몇건] or 후보[:몇건]
+    # ⛔ 0건을 순위대로 채우면 안 됩니다 — 지시문이 「없으면 하나도 고르지 않는다」를
+    #    허용하므로 0건은 정상입니다. 채워 넣으면 조인 것이 도로아미타불이 됩니다.
+    #    다만 답에 번호가 있는데 하나도 못 읽었다면 형식이 어긋난 것이라 순위로 갑니다.
+    if not 고른것 and re.search(r"\d", 답):
+        print(f"  핫뉴스: 후보 {len(후보)}건 → 형식이 어긋나 순위대로 {몇건}건 · ${비용:.4f}")
+        return 후보[:몇건]
+    print(f"  핫뉴스: 후보 {len(후보)}건 → {len(고른것[:몇건])}건 골랐습니다 · ${비용:.4f}")
+    return 고른것[:몇건]
 
 
 제목캐시 = "titles.json"   # {지문: 한글 제목}
@@ -253,13 +282,27 @@ def 요약저장(캐시: dict, 살릴지문: set, path: str = CACHE) -> None:
     os.replace(tmp, path)
 
 
-def _한건(client, g: dict) -> tuple[str, str, int, int]:
+def _한건(client, g: dict) -> tuple[str, str, int, int, bool]:
     본문 = f"제목: {g['title']}\n매체: {g.get('source', '')}\n본문: {g['desc']}"
     쓸지시 = 지시_요약만 if g.get("source") in 판정면제 else 지시
     m = client.messages.create(model=MODEL, max_tokens=MAX_TOKENS, system=쓸지시,
                                messages=[{"role": "user", "content": 본문}])
     글 = "".join(b.text for b in m.content if b.type == "text").strip()
-    return g["fp"], 글, m.usage.input_tokens, m.usage.output_tokens
+    입, 출, 줄였다 = m.usage.input_tokens, m.usage.output_tokens, False
+
+    if len(글) > 줄임한계:
+        try:
+            m2 = client.messages.create(model=MODEL, max_tokens=100, system=줄임지시,
+                                        messages=[{"role": "user", "content": 글}])
+            줄인 = "".join(b.text for b in m2.content if b.type == "text").strip()
+            입 += m2.usage.input_tokens
+            출 += m2.usage.output_tokens
+            # 더 길어지거나 빈 답이 오면 원문을 그대로 둡니다. 줄이기는 덤입니다.
+            if 줄인 and len(줄인) < len(글):
+                글, 줄였다 = 줄인, True
+        except Exception:
+            pass   # 줄이기 실패로 요약 자체를 잃지 않습니다
+    return g["fp"], 글, 입, 출, 줄였다
 
 
 def 채우기(기사: list[dict], path: str = CACHE) -> dict:
@@ -268,7 +311,8 @@ def 채우기(기사: list[dict], path: str = CACHE) -> dict:
     요약은 **덤**입니다. 키가 없든 API 가 죽었든, 화면 생성과 알림은 그대로 돌아야 합니다.
     그래서 이 함수는 예외를 밖으로 내보내지 않습니다.
     """
-    잰것 = {"새로": 0, "재사용": 0, "건너뜀": 0, "실패": 0, "in": 0, "out": 0, "비용": 0.0}
+    잰것 = {"새로": 0, "재사용": 0, "건너뜀": 0, "실패": 0, "줄임": 0,
+           "in": 0, "out": 0, "비용": 0.0}
     캐시 = 이전요약(path)
     for g in 기사:
         g["summary"] = 캐시.get(g["fp"], "")
@@ -296,7 +340,7 @@ def 채우기(기사: list[dict], path: str = CACHE) -> dict:
     with cf.ThreadPoolExecutor(max_workers=동시) as pool:
         for fut in cf.as_completed([pool.submit(_한건, client, g) for g in 할것]):
             try:
-                fp, 글, i, o = fut.result()
+                fp, 글, i, o, 줄였다 = fut.result()
             except Exception as e:
                 잰것["실패"] += 1
                 if 잰것["실패"] == 1:      # 같은 오류가 100줄 찍히지 않게 첫 건만 남깁니다
@@ -304,6 +348,7 @@ def 채우기(기사: list[dict], path: str = CACHE) -> dict:
                 continue
             캐시[fp] = 글
             잰것["새로"] += 1
+            잰것["줄임"] += 줄였다
             잰것["in"] += i
             잰것["out"] += o
 

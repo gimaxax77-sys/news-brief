@@ -428,5 +428,98 @@ brief.알림("보내면 안 됨")
 assert 보낸것 == [], "키가 없는데 전송했습니다"
 brief.requests.post = 원래
 
+# --- 요약 줄이기: 긴 요약만 한 번 더 불러 줄인다 (망 접속 없이 가짜 client 로) ---
+# ⛔ 이 장치가 있는 이유 — 길이 규칙을 요약 지시문에 넣으면 **판정까지 조여진다.**
+#    2026-08-08 실측: 「50자를 넘기지 않는다」를 넣자 분야 밖 판정이 8→15건으로 늘고
+#    그중 5건이 우리 분야를 잘못 뺀 것이었다. 그래서 판정 호출은 건드리지 않는다.
+for 말 in ("넘기지 않는다", "50자", "가장 중요한 규칙"):
+    assert 말 not in summarize.지시, \
+        f"요약 지시문에 길이 강제 문구('{말}')가 들어갔습니다 — 판정이 과하게 조여집니다"
+assert summarize.줄임한계 == 60, "줄이기 문턱이 바뀌었습니다"
+assert "50자 이내" in summarize.줄임지시 and "새 사실을 보태지 않는다" in summarize.줄임지시, \
+    "줄이기 지시문에서 길이·사실 보존 규칙이 빠졌습니다"
+
+
+class _블록:
+    type = "text"
+
+    def __init__(self, t):
+        self.text = t
+
+
+class _답:
+    def __init__(self, t):
+        self.content = [_블록(t)]
+        self.usage = type("u", (), {"input_tokens": 10, "output_tokens": 5})()
+
+
+class _메시지:
+    def __init__(self, 답들):
+        self.답들, self.부른것 = list(답들), []
+
+    def create(self, **kw):
+        self.부른것.append(kw)
+        답 = self.답들[min(len(self.부른것) - 1, len(self.답들) - 1)]
+        if 답 == "!!오류":
+            raise RuntimeError("줄이기 실패")
+        return _답(답)
+
+
+class _가짜:
+    def __init__(self, *답들):
+        self.messages = _메시지(답들)
+
+
+기사하나 = {"fp": "x", "title": "제목", "desc": "본문", "source": "테스트"}
+긴글 = "가" * 80
+
+c = _가짜("짧은 요약입니다.")
+_, 글, _, _, 줄였다 = summarize._한건(c, 기사하나)
+assert 글 == "짧은 요약입니다." and not 줄였다 and len(c.messages.부른것) == 1, \
+    "짧은 요약인데 줄이기를 불렀습니다"
+
+c = _가짜(긴글, "짧게 줄인 문장.")
+_, 글, 입, 출, 줄였다 = summarize._한건(c, 기사하나)
+assert 글 == "짧게 줄인 문장." and 줄였다, f"긴 요약이 안 줄었습니다: {글}"
+assert len(c.messages.부른것) == 2, "줄이기 호출이 안 나갔습니다"
+assert 입 == 20 and 출 == 10, f"줄이기에 쓴 토큰이 비용에 안 잡힙니다: {입}/{출}"
+
+c = _가짜(긴글, "가" * 100)
+_, 글, _, _, 줄였다 = summarize._한건(c, 기사하나)
+assert 글 == 긴글 and not 줄였다, "줄인 결과가 더 긴데 그것을 썼습니다"
+
+c = _가짜(긴글, "!!오류")
+_, 글, _, _, 줄였다 = summarize._한건(c, 기사하나)
+assert 글 == 긴글 and not 줄였다, "줄이기가 실패하자 요약까지 잃었습니다"
+
+# --- 핫뉴스: 조인 기준 + 0건을 순위로 채우지 않는다 ---
+for 말 in ("채우려 하지 마라", "업무협약", "예고·전망·기대·루머", "의견·칼럼·리뷰"):
+    assert 말 in summarize.핫지시, f"핫뉴스 기준에서 '{말}' 이 빠졌습니다"
+
+import sys as _sys
+import types as _types
+
+원래모듈 = _sys.modules.get("anthropic")
+후보2 = 제목만("하나", "둘", "셋", "넷")
+for x in 후보2:
+    x["dup"], x["topic"] = 1, "IT이슈"
+os.environ["ANTHROPIC_API_KEY"] = "테스트용"
+try:
+    for 답, 기대, 메시지 in (
+            ("고를 것이 없습니다", 0, "0건을 골랐는데 순위대로 채웠습니다"),
+            ("0|범위 밖 번호", 2, "형식이 어긋났는데 알림이 통째로 비었습니다"),
+            ("2|둘이 중요하다", 1, "모델이 고른 것을 못 읽었습니다")):
+        가짜모듈 = _types.ModuleType("anthropic")
+        가짜모듈.Anthropic = lambda *a, _c=_가짜(답), **k: _c
+        _sys.modules["anthropic"] = 가짜모듈
+        assert len(summarize.핫뉴스(후보2, 2)) == 기대, 메시지
+finally:
+    os.environ.pop("ANTHROPIC_API_KEY", None)
+    if 원래모듈 is None:
+        _sys.modules.pop("anthropic", None)
+    else:
+        _sys.modules["anthropic"] = 원래모듈
+
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 뒤로9 · 번역15 · 알림1")
+      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 뒤로9 · 번역15 · "
+      "줄이기11 · 핫조임7 · 알림1")

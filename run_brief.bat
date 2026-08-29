@@ -5,7 +5,7 @@ REM   LF breaks cmd parsing, and Korean text here corrupts the shared log.
 cd /d "D:\.CODE\AXdata\axdata_15_news_brief"
 set PYTHONIOENCODING=utf-8
 set LOG=D:\.CODE\AXdata\axdata_15_news_brief\brief_log.txt
-set PY=C:\Users\gimsf\AppData\Local\Programs\Python\Python314\python.exe
+set PY=%LOCALAPPDATA%\Programs\Python\Launcher\py.exe
 
 "%PY%" -X utf8 -u brief.py >> "%LOG%" 2>&1
 if errorlevel 1 (

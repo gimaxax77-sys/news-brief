@@ -1,4 +1,4 @@
-# 수집할 뉴스 소스 목록 (전부 2026-08-04 접속 확인함)
+# 수집할 뉴스 소스 목록 (2026-08-04 접속 확인 · 11-16 새 장르로 교체하며 다시 확인)
 import urllib.parse as up
 
 
@@ -22,22 +22,19 @@ SOURCES = [
     ("AI·클로드", "Hacker News", "https://hnrss.org/newest?q=Claude+OR+Anthropic"),
     ("AI·클로드", "OpenAI", "https://openai.com/news/rss.xml"),
     ("AI·클로드", "Google AI", "https://blog.google/technology/ai/rss/"),
+    # AI 전문지 (2026-11-16 접속 확인 — The Decoder 10건 · AI타임스 25건)
+    ("AI·클로드", "The Decoder", "https://the-decoder.com/feed/"),
+    ("AI·클로드", "AI타임스", "https://www.aitimes.com/rss/allArticle.xml"),
 
-    # --- 게임 개발 ---
-    ("게임개발", "구글뉴스", 구글뉴스("게임개발 OR 유니티 OR 언리얼엔진")),
-    ("게임개발", "Game Developer", "https://www.gamedeveloper.com/rss.xml"),
-    ("게임개발", "Godot", "https://godotengine.org/rss.xml"),
-    ("게임개발", "Unity", "https://blog.unity.com/feed"),
-
-    # --- 유튜브 · 쇼츠 운영 ---
-    # ⛔ 이 분야에는 구글뉴스 검색을 쓰지 않습니다. 2026-08-04 에 한글·영문 쿼리 4종을
-    # 실측했는데 전부 노이즈가 압도적이었습니다("심현섭 하루 3억2천", "당진 온열질환 사망").
-    # 구글 뉴스는 매체명까지 느슨하게 매칭해서, 국내 보도가 드문 좁은 실무 주제에는
-    # 관련 없는 기사를 억지로 끌어옵니다. 아래 전용 매체 셋이 훨씬 정확합니다.
-    ("유튜브·쇼츠", "YouTube 공식", "https://blog.youtube/rss/"),
-    ("유튜브·쇼츠", "YouTube Creators",
-     "https://www.youtube.com/feeds/videos.xml?channel_id=UCkRfArvrzheW2E7b6SVT7vQ"),
-    ("유튜브·쇼츠", "TubeFilter", "https://www.tubefilter.com/feed/"),
+    # --- 바이브코딩 · AI 팁 (2026-11-16 Gim 새 장르, 발주 77발-012) ---
+    # 전용 매체 위주입니다. 구글뉴스 검색은 «바이브코딩» 한 단어만 씁니다 — 11-16 실측
+    # 21건이 전부 주제에 맞았습니다. 잡음이 생기면 이 줄부터 뺍니다(함정 1).
+    ("바이브코딩", "GeekNews", "https://news.hada.io/rss/news"),
+    ("바이브코딩", "요즘IT", "https://yozm.wishket.com/magazine/feed/"),
+    ("바이브코딩", "Simon Willison", "https://simonwillison.net/atom/everything/"),
+    ("바이브코딩", "Latent Space", "https://www.latent.space/feed"),
+    ("바이브코딩", "r/vibecoding", "https://www.reddit.com/r/vibecoding/top/.rss?t=day"),
+    ("바이브코딩", "구글뉴스", 구글뉴스("바이브코딩")),
 
     # --- 최신 IT · IT 이슈 ---
     ("IT이슈", "구글뉴스", 구글뉴스("IT 업계 OR 인공지능 OR 반도체")),
@@ -58,7 +55,7 @@ SOURCES = [
 ]
 
 # 화면에 이 순서로 나옵니다.
-분야순서 = ["AI·클로드", "게임개발", "유튜브·쇼츠", "IT이슈"]
+분야순서 = ["AI·클로드", "바이브코딩", "IT이슈"]
 
 # 제목에 이 말이 들어가면 버립니다. 국내 IT 일간지(전자신문·ZDNet)가 종합 섹션을 함께
 # 내보내서 증시·정치·사건사고가 섞여 들어옵니다(2026-08-04 실측: 전자신문 25건 중 13건).

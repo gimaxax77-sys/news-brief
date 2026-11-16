@@ -77,8 +77,8 @@ assert "새 소식이 없습니다" in 문서, "기사 없는 분야에 안내�
 # --- 검색·색인 ---
 목록 = []
 for i, (제, 분, 출) in enumerate([("클로드 신기능", "AI·클로드", "네이트"),
-                                 ("유니티 6 출시", "게임개발", "네이트"),
-                                 ("쇼츠 알고리즘", "유튜브·쇼츠", "TubeFilter")]):
+                                 ("커서 새 기능", "바이브코딩", "네이트"),
+                                 ("아이폰 출시", "IT이슈", "TubeFilter")]):
     x = 기사(제, 분, 출)
     x["fp"] = collect.지문(x)
     목록.append(x)
@@ -97,7 +97,7 @@ assert 'id="q"' in 머리 and "<h1>" in 머리, "검색칸이 헤더 밖에 있�
 assert "display:flex" in 문서[문서.index("header{"):문서.index("header{") + 200], \
     "헤더가 한 줄로 배치되지 않았습니다"
 # 검색 열쇠는 소문자로 미리 만들어 둔다(대소문자 구분 없이 걸리게)
-대문자 = 기사("YouTube Shorts UPDATE", "유튜브·쇼츠", "TubeFilter")
+대문자 = 기사("YouTube Shorts UPDATE", "IT이슈", "TubeFilter")
 대문자["fp"] = collect.지문(대문자)
 assert 'data-k="youtube shorts update tubefilter' in render.만들기(
     [대문자], set(), [], 지금), "검색 열쇠가 소문자로 정규화되지 않았습니다"
@@ -113,7 +113,7 @@ for 분야 in 분야순서:
     assert f'.chip[data-kind="topic"][data-val="{분야}"]' in 규칙, f"{분야} 칩 색 규칙이 없습니다"
 assert f"--tint:{render.기본색}" in 규칙, "색을 못 찾은 분야용 기본값이 없습니다"
 문서 = render.만들기(목록, set(), [], 지금)
-for 분야 in ("AI·클로드", "게임개발"):
+for 분야 in ("AI·클로드", "바이브코딩"):
     assert f'<section data-t="{분야}"' in 문서, f"{분야} 구역에 색 표시가 없습니다"
 assert "color-mix(in srgb,var(--tint) 6%,transparent)" in 문서, "카드 배경이 아주 옅어야 합니다"
 assert "li.empty{background:none" in 문서, "빈 안내에는 카드를 씌우지 않습니다"
@@ -132,15 +132,15 @@ assert 문서.index("AI뉴스2") < 문서.index("<li hidden "), "앞의 것부�
 assert f'class="rest" data-val="AI·클로드">나머지 {7 - render.본문상한}건 보기' in 문서, \
     "나머지를 탭에서 보라는 안내가 없습니다"
 # 상한 이하인 분야에는 안내를 띄우지 않는다
-assert '<button class="rest" data-val="게임개발" hidden>' in 문서, "빈 분야에 안내가 떠 있습니다"
+assert '<button class="rest" data-val="바이브코딩" hidden>' in 문서, "빈 분야에 안내가 떠 있습니다"
 
 # --- 분야 탭: 신규 건수만. 전체 건수를 넣으면 360px 폰에서 한 줄에 안 들어간다 ---
 # 탭이 다섯이라 긴 이름은 탭에서만 줄여 쓴다. data-val 은 원래 이름이어야 필터가 걸린다.
 assert 'data-val="AI·클로드" aria-pressed="false">AI<span class="nn">+2</span></button>' \
     in 문서, "탭에 신규 건수가 없거나 이름을 안 줄였습니다"
-assert 'data-val="게임개발" aria-pressed="false">게임개발</button>' in 문서, \
+assert 'data-val="바이브코딩" aria-pressed="false">바이브코딩</button>' in 문서, \
     "신규가 없는 분야에는 +0 을 붙이지 않습니다"
-assert render._탭이름("유튜브·쇼츠") == "유튜브" and render._탭이름("IT이슈") == "IT이슈"
+assert render._탭이름("AI·클로드") == "AI" and render._탭이름("IT이슈") == "IT이슈"
 assert set(render.탭줄임) <= set(분야순서), "탭줄임에 없는 분야 이름이 있습니다"
 assert '<button class="chip"' in 문서 and 'class="n"' not in 문서, \
     "탭에 전체 건수가 남아 있으면 한 줄에 안 들어갑니다"
@@ -325,7 +325,7 @@ for i in range(3):
     x = 기사(f"핫뉴스{i}", "AI·클로드")
     x["fp"] = collect.지문(x)
     핫들.append(x)
-보통 = 기사("보통 기사", "게임개발")
+보통 = 기사("보통 기사", "바이브코딩")
 보통["fp"] = collect.지문(보통)
 쌓인핫 = {핫들[0]["fp"]: {"왜": "판이 바뀌는 소식", "at": "2026-08-05T03:00:00+00:00"},
         핫들[1]["fp"]: {"왜": "", "at": "2026-08-05T01:00:00+00:00"}}

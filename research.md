@@ -167,3 +167,36 @@ schtasks /query /tn "AXdata_NewsBrief" /fo LIST
 소스 실패가 매 회차 0~3건씩 났다(09-04 7건 · 09-05 9건 · 09-06 3건). 기사 총량 200건대가 유지되고
 다음 회차에 회복돼 **일시적 응답 실패로 보였으나, 로그에 실패한 소스 이름이 안 남아 특정하지 못했다.**
 재개할 때 이 증상이 이어지면 `collect.py` 가 실패 소스 이름을 로그에 남기도록 한 줄 고치는 것부터 하면 된다.
+
+## 2026-11-16 새 장르로 교체 (발주 77발-012 · Gim 답 «2번»)
+
+**Gim 결정** — 장르를 AI 테크 · IT 최신 뉴스 · 생성형 AI · 바이브코딩 · AI 팁으로 바꾼다(게임개발 · 유튜브·쇼츠 제외).
+계획 세 갈래 중 **«② 고치고 시험만, 켜기는 미룸»** 을 골랐다. 그래서 예약 작업은 여전히 `Disabled`, 푸시 · API 호출 · 텔레그램 없음.
+
+### 바꾼 것
+- `sources.py` — 게임개발 4 · 유튜브·쇼츠 3 소스 삭제. AI·클로드에 The Decoder · AI타임스 추가.
+  새 분야 «바이브코딩»: GeekNews · 요즘IT · Simon Willison · Latent Space · r/vibecoding · 구글뉴스(«바이브코딩» 한 단어).
+  분야순서 = AI·클로드 · 바이브코딩 · IT이슈 (탭은 핫이슈 포함 넷).
+- `render.py` — 분야색에서 옛 둘을 빼고 바이브코딩=보라. 탭줄임은 AI·클로드→AI 만.
+- `summarize.py` — 실을 기사 기준 «게임·유튜브» → «AI 활용 팁·코딩 도구». 보기 «게임기 판매량» → «AI 코딩 도구 사용 팁».
+  판정면제 = Claude Code 릴리스 · OpenAI · Google AI · The Decoder · Simon Willison · Latent Space.
+- `test_brief.py` — 옛 분야 이름을 새 이름으로. **20묶음 통과.**
+
+### 소스 확인 (11-16, `한소스()` 로 접속)
+- 살아 있음: The Decoder 10 · AI타임스 25 · GeekNews 20 · 요즘IT 25 · r/vibecoding 25 · Simon Willison 9 · Latent Space 1 · 구글뉴스 «바이브코딩» 21(전부 주제 맞음).
+- 0건(3일 안 새 글 없음이거나 죽음, 구별 안 함): GitHub blog AI · DeepMind · Anthropic 커뮤니티 피드 · One Useful Thing · Ben's Bites · MIT TR AI · Cursor changelog · Gemini CLI 릴리스.
+- 오류: r/ClaudeAI HTTP 429 · hnrss 검색 502. 넣지 않았다.
+
+### 무과금 수집 실측 (같은 날 1회)
+- 총 **324건**(실패 0) — AI·클로드 80 · 바이브코딩 88 · IT이슈 156. 옛 장르 약 240건보다 **35% 많다.**
+- 그래서 옛 실측 월 $5~8.4 를 그대로 쓰면 낮다. 같은 비율이면 **월 $7~11 추정**(켠 뒤 사흘치로 다시 잴 것).
+- ⚠ 바이브코딩 칸 잡음 — GeekNews 는 일반 개발 뉴스(Linux rc · 나스닥 선물 Show GN)가 섞인다. 판정면제에 안 넣었으니 요약 단계 판정이 거른다.
+  구글뉴스 «바이브코딩»은 금융 · 기업 기사지만 모두 바이브코딩 언급이 있었다.
+
+### 확인 못 한 것
+- 11월분 Ultra 크레딧 잔액(콘솔 로그인 필요).
+- 요약 판정이 새 기준으로 무엇을 거르는지 — API 를 안 불렀다(켤 때 첫 회차 로그 «분야밖 N건» 으로 본다).
+- 화면 탭 넷이 360px 한 줄에 드는지 — 페이지를 다시 만들지 않았다(옛 탭 다섯보다 적어 넘칠 일은 없다고 본다, 실측 아님).
+
+### 켜는 법 (Gim 이 말씀하시면)
+`Enable-ScheduledTask -TaskName 'AXdata_NewsBrief'` 후 `run_brief.bat` 1회 → 페이지 갱신 · 텔레그램 확인 · `schtasks /query` 로 Next Run Time 확인.

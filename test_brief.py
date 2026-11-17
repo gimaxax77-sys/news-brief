@@ -188,6 +188,21 @@ assert len(다름) == 2 or 다름[0]["title"].startswith("오픈AI"), "판단이
     설명={"삼성전자, 갤럭시 Z8 사전예약 144만대... 역대 신기록": "본문이 여기 있습니다. 이만큼 충분히 깁니다."}))
 assert len(바뀜) == 1 and 바뀜[0]["desc"], "본문 있는 쪽을 대표로 세우지 않았습니다"
 
+# 11-17 — 한 사건이 도배되면 그 낱말이 «흔한 말»이 돼 못 묶였다(갤럭시 XR 21건 → 8건 남음)
+도배 = ["삼성전자, 청소년 AI 교육에 ‘갤럭시 XR’ 도입", "삼성전자, 중학교 AI 수업에 '갤럭시 XR' 활용 지원",
+        "삼성전자, '갤럭시 AI 클래스'에 '갤럭시 XR' 도입", "삼성전자, AI 클래스에 '갤럭시 XR' 과정 추가",
+        "삼성전자, 청소년 AI 교육에 '갤럭시 XR' 체험 도입", "삼성전자, ‘갤럭시 XR’로 교실 속 AI 경험 확대"]
+딴것 = [f"소식{i} 제목{i} 낱말{i}" for i in range(60)]   # 실제처럼 한 사건이 전체의 10% 안팎
+줄음 = collect.한사건씩(제목만(*도배, *딴것))
+assert sum(1 for g in 줄음 if "XR" in g["title"]) == 1, f"도배된 한 사건이 하나로 안 줄었습니다: {sum(1 for g in 줄음 if 'XR' in g['title'])}"
+
+# 영어 기능어(are)만 겹치는 다른 소식은 묶지 않는다
+기능 = collect.한사건씩(제목만(
+    "Anthropic Wants to Be Your Office, and Microsoft Investors Are Worried",
+    "Anthropic Founders’ Stakes Are Worth $18 Billion Apiece at IPO Price",
+    *[f"Anthropic topic{i} item{i}" for i in range(40)]))   # 실제처럼 «anthropic»은 흔한 말
+assert len(기능) == 42, "영어 기능어 하나로 다른 소식이 묶였습니다"
+
 # --- 제외어: 국내 IT 일간지가 함께 내보내는 증시·정치·사건사고를 버린다 ---
 from sources import SOURCES, 제외어  # noqa: E402
 
@@ -521,5 +536,5 @@ finally:
         _sys.modules["anthropic"] = 원래모듈
 
 print("통과: 지문3 · 최신만4 · 파싱2 · 신규판정5 · 화면4 · 상한5 · 탭2 · 접기5 · "
-      "묶기5 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 뒤로9 · 번역15 · "
+      "묶기7 · 제외5 · 설명5 · 요약6 · 판정10 · 야간8 · 핫이슈11 · 뒤로9 · 번역15 · "
       "줄이기11 · 핫조임7 · 알림1")

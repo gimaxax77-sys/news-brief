@@ -171,6 +171,10 @@ _버릴말 = re.compile(r"\[[^\]]*\]|\([^)]*\)|[\"'“”‘’·…\-—,.!?~/|
 # ⛔ 이 틀로 시작하는 글은 묶지 않습니다. Show/Ask HN 은 제목 생김새가 똑같지만
 #    안은 전부 **다른 프로젝트**입니다(cctap·Cckeep·AxiomCore 가 하나로 뭉쳤습니다).
 _묶지않음 = re.compile(r"^\s*(show|ask|tell)\s+hn[:\s]", re.I)
+# 2026-11-17 실측: «Anthropic 오피스 진출» 글이 «are» 하나를 귀한 낱말로 공유해 IPO 기사에 묶였습니다.
+_영어기능어 = set("the and for are with from that this its your you into after ahead how what why who new has have "
+                "will was were can out about over just now more than not but all our their they his her its at on in "
+                "of to is it as by an be or we".split())
 
 
 def _조각(제목: str) -> set:
@@ -180,7 +184,8 @@ def _조각(제목: str) -> set:
 
 
 def _낱말(제목: str) -> set:
-    return {w.lower() for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", _버릴말.sub(" ", 제목))}
+    # 영어 기능어(the · are …)는 «귀한 낱말»로 치지 않습니다 — 드물게 나와도 사건을 가리키지 않습니다.
+    return {w.lower() for w in re.findall(r"[가-힣A-Za-z0-9]{2,}", _버릴말.sub(" ", 제목))} - _영어기능어
 
 
 def 한사건씩(기사: list[dict], 문턱: float = CLUSTER_MIN) -> list[dict]:
@@ -197,20 +202,31 @@ def 한사건씩(기사: list[dict], 문턱: float = CLUSTER_MIN) -> list[dict]:
     셈 = collections.Counter(w for s in 낱말들 for w in s)
     흔함 = max(3, len(기사) // 20)          # 전체의 5% 넘게 나오면 흔한 말입니다
     귀함 = [{w for w in s if 셈[w] <= 흔함} for s in 낱말들]
+    # ⛔ 한 사건이 수십 곳에 실리면 그 사건 낱말 자체가 «흔한 말»이 돼 위 조건이 못 묶습니다
+    #    (2026-11-17 실측: 삼성 «갤럭시 XR 교육» 21건 — 갤럭시 22 · 삼성전자 21 · XR 20 이 흔함 17 을 넘어 8건이 남음).
+    #    그래서 «AI» 같은 정말 흔한 말(전체 20% 넘게)만 빼고, 이런 낱말을 셋 이상 함께 쓰면 같은 사건으로 봅니다.
+    #    둘만 겹치면 «삼성전자 · 갤럭시»처럼 같은 회사의 다른 소식이 뭉칠 수 있어 셋으로 둡니다.
+    넓은흔함 = max(흔함, len(기사) // 5)
+    넓게귀함 = [{w for w in s if 셈[w] <= 넓은흔함} for s in 낱말들]
 
-    남길, 대표 = [], []
+    def 같은사건(i: int, j: int) -> bool:
+        겹침 = 조각들[i] & 조각들[j]
+        if not 겹침 or len(겹침) / len(조각들[i] | 조각들[j]) < 문턱:
+            return False
+        return bool(귀함[i] & 귀함[j]) or len(넓게귀함[i] & 넓게귀함[j]) >= 3
+
+    남길, 식구 = [], []   # 식구 = 묶음마다 들어간 기사 번호 — 대표 하나가 아니라 식구 누구와 닮아도 같은 묶음입니다
     for i, g in enumerate(기사):
         짝 = None
         if not _묶지않음.match(g["title"]):
-            짝 = next((j for j in 대표
-                       if 조각들[i] & 조각들[j] and 귀함[i] & 귀함[j]
-                       and len(조각들[i] & 조각들[j]) / len(조각들[i] | 조각들[j]) >= 문턱), None)
+            짝 = next((k for k, 묶음 in enumerate(식구) if any(같은사건(i, j) for j in 묶음)), None)
         if 짝 is None:
-            대표.append(i)
+            식구.append([i])
             g["dup"] = 1
             남길.append(g)
             continue
-        자리 = 대표.index(짝)
+        식구[짝].append(i)
+        자리 = 짝
         묶인수 = 남길[자리]["dup"] + 1
         if not 남길[자리].get("desc") and g.get("desc"):
             # 대표에 본문이 없고 뒤엣것에 있으면 바꿔 답니다 — 요약할 수 있는 쪽이 낫습니다.

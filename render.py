@@ -103,6 +103,15 @@ a.t:hover{text-decoration:underline}
 mark{background:#fde68a;color:#000;border-radius:2px;padding:0 1px}
 @media(prefers-color-scheme:dark){mark{background:#a16207;color:#fff}}
 .empty{opacity:.42;font-size:14px;padding:4px 0}
+/* 같은 화제 접기 — 대표 카드 밑 «관련 N건». 펼치면 식구가 카드 안에 줄로 나옵니다(카드 속 카드는 안 씀). */
+.grp{margin-top:6px}
+.grp>summary{font-size:13px;font-weight:700;color:var(--tint);padding:4px 0 0}
+.grp>summary::after{margin-left:6px}
+.grp .nn{color:#c2410c;font-weight:800;margin-left:3px}
+.rel{gap:0;margin-top:4px}
+.rel li.r{background:none;border:0;border-radius:0;padding:7px 0 6px;
+ border-top:1px solid color-mix(in srgb,var(--tint) 18%,transparent)}
+.rel a.t{font-size:15px}
 #none{display:none;padding:30px 16px;text-align:center;opacity:.5;font-size:15px}
 footer{padding:20px 10px 0;font-size:12px;opacity:.4;line-height:1.7}
 /* 분야를 고르거나 검색 중일 때만 뜨는 「전체로」 단추. 한 분야만 보고 있으면
@@ -234,8 +243,8 @@ def _탭이름(분야: str) -> str:
     return 탭줄임.get(분야, 분야)
 
 
-def _기사(g: dict, 새것: set, 숨김: bool = False, 분야덮기: str = "",
-        한줄: str = "") -> str:
+def _속(g: dict, 새것: set, 한줄: str = "") -> str:
+    """카드 안쪽(제목 · 번역 제목 · 출처 · 요약)."""
     e = html.escape
     뱃지 = '<span class="new">NEW</span>' if g["fp"] in 새것 else ""
     부가 = " · ".join(x for x in (e(g["source"]), _시각표기(g["at"])) if x)
@@ -244,13 +253,56 @@ def _기사(g: dict, 새것: set, 숨김: bool = False, 분야덮기: str = "",
     요약 = f'<div class="sum">{e(본글)}</div>' if 본글 else ""
     # 영문 제목에만 붙는 한국어 제목. 제목 바로 밑에 둡니다 — 출처보다 먼저 눈에 들어와야 합니다.
     옮김 = f'<div class="ko">{e(g["ko"])}</div>' if g.get("ko") else ""
+    return (f'<a class="t" href="{e(g["url"])}" target="_blank" rel="noopener">'
+            f'{뱃지}{e(g["title"])}</a>{옮김}<div class="sub">{부가}</div>{요약}')
+
+
+def _열쇠(g: dict) -> str:
+    return f"{g['title']} {g['source']} {g.get('summary', '')}".lower()
+
+
+def _기사(g: dict, 새것: set, 숨김: bool = False, 분야덮기: str = "",
+        한줄: str = "", 식구: list[dict] | None = None) -> str:
+    e = html.escape
     # data-k = 검색 대상(제목+출처+요약). 미리 소문자로 만들어 두면 걸러낼 때 빠릅니다.
-    열쇠 = e(f"{g['title']} {g['source']} {g.get('summary', '')}".lower())
+    # 접힌 식구 글도 대표 카드의 열쇠에 넣습니다 — 검색하면 그 화제 카드가 걸립니다.
+    열쇠 = e(" ".join(_열쇠(x) for x in [g] + (식구 or [])))
+    접힘 = ""
+    if 식구:
+        이름 = g["화제"][0]
+        속들 = "".join(f'<li class="r">{_속(x, 새것)}</li>' for x in 식구)
+        새수 = sum(1 for x in 식구 if x["fp"] in 새것)
+        접힘 = (f'<details class="grp"><summary>«{e(이름)}» 관련 {len(식구)}건'
+                + (f' <span class="nn">+{새수}</span>' if 새수 else "")
+                + f'</summary><ul class="rel">{속들}</ul></details>')
     # 상한을 넘는 기사는 서버에서 미리 감춥니다. 첫 화면이 240건 그렸다가 줄어들면 눈에 띕니다.
     return (f'<li{" hidden" if 숨김 else ""} '
             f'data-k="{열쇠}" data-t="{e(분야덮기 or g["topic"])}">'
-            f'<a class="t" href="{e(g["url"])}" target="_blank" rel="noopener">'
-            f'{뱃지}{e(g["title"])}</a>{옮김}<div class="sub">{부가}</div>{요약}</li>')
+            f'{_속(g, 새것, 한줄)}{접힘}</li>')
+
+
+def 화제카드(목록: list[dict]) -> list[tuple[dict, list[dict]]]:
+    """분야 목록을 (대표, 접을 식구) 카드로 바꿉니다. 대표는 그 화제에서 목록상 첫 기사 자리에 섭니다.
+
+    대표 = 다룬 매체가 많은 것 → 요약이 있는 것 → 목록 앞(최신)인 것.
+    """
+    식구 = {}
+    for g in 목록:
+        if g.get("화제"):
+            식구.setdefault(g["화제"][1], []).append(g)
+    카드, 놓은 = [], set()
+    for g in 목록:
+        h = g.get("화제")
+        if not h or len(식구[h[1]]) < 2:
+            카드.append((g, []))
+            continue
+        if h[1] in 놓은:
+            continue
+        놓은.add(h[1])
+        무리 = 식구[h[1]]
+        대표 = min(무리, key=lambda x: (-x.get("dup", 1), not x.get("summary"), 무리.index(x)))
+        카드.append((대표, [x for x in 무리 if x is not 대표]))
+    return 카드
 
 
 def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.datetime,
@@ -282,14 +334,18 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
                     f"<span style='opacity:.65'>{len(핫목록)}</span></h2></summary>"
                     f'<ul>{속}</ul>{더}</details></section>')
 
+    카드수 = 0
     for 분야 in 분야순서:
         목록 = 묶음.get(분야, [])
+        카드 = 화제카드(목록)   # 같은 화제는 한 카드 — 건수도 카드 수로 셉니다
+        카드수 += len(카드)
         n = 신규수[분야]
-        머리 = f"{e(분야)} <span style='opacity:.65'>{len(목록)}</span>"
+        머리 = f"{e(분야)} <span style='opacity:.65'>{len(카드)}</span>"
         머리 += f" <span style='color:#c2410c'>+{n}</span>" if n else ""
-        속 = ("".join(_기사(g, 새것, 숨김=i >= 본문상한) for i, g in enumerate(목록)) if 목록
+        속 = ("".join(_기사(g, 새것, 숨김=i >= 본문상한, 식구=식)
+                      for i, (g, 식) in enumerate(카드)) if 카드
               else '<li class="empty">새 소식이 없습니다.</li>')
-        남음 = max(0, len(목록) - 본문상한)
+        남음 = max(0, len(카드) - 본문상한)
         더 = (f'<button class="rest" data-val="{e(분야)}"{"" if 남음 else " hidden"}>'
               f'나머지 {남음}건 보기</button>')
         본문.append(f'<section data-t="{e(분야)}"><details open>'
@@ -317,7 +373,7 @@ def 만들기(기사: list[dict], 새것: set, 실패: list[str], 갱신: dt.dat
 {_색규칙()}</style></head><body>
 <header>
   <h1>뉴스 브리핑</h1>
-  <div class="meta"><span id="cnt">{len(기사)}</span>{f' <b>+{len(새것)}</b>' if 새것 else ''}</div>
+  <div class="meta"><span id="cnt">{카드수}</span>{f' <b>+{len(새것)}</b>' if 새것 else ''}</div>
   <div class="search">
     <input id="q" type="search" placeholder="검색" autocomplete="off"
            enterkeyhint="search" aria-label="검색">

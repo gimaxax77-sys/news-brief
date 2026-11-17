@@ -10,7 +10,7 @@ load_dotenv()
 
 from collect import 기록저장, 모으기, 신규만, 이전기록, 지문  # noqa: E402
 from render import 만들기  # noqa: E402
-from summarize import (버릴까, 제목옮기기, 핫기록, 핫뉴스,  # noqa: E402
+from summarize import (버릴까, 제목옮기기, 핫기록, 핫뉴스, 화제묶기,  # noqa: E402
                        채우기 as 요약채우기)
 
 OUT = os.path.join("docs", "index.html")  # GitHub Pages 가 docs/ 를 그대로 서빙합니다.
@@ -102,6 +102,11 @@ def main() -> int:
     if 옮긴것["새로"] or 옮긴것["재사용"]:
         print(f"  제목번역: 새로 {옮긴것['새로']}건 · 재사용 {옮긴것['재사용']}건"
               + (f" · ${옮긴것['비용']:.4f}" if 옮긴것["새로"] else ""))
+
+    # 같은 화제(서로 다른 기사)는 화면에서 대표 1건 밑에 접습니다. 기사는 버리지 않습니다.
+    묶은것 = 화제묶기(기사)
+    if 묶은것["화제"]:
+        print(f"  화제: {묶은것['화제']}개로 {묶은것['접힘']}건 접음 · ${묶은것['비용']:.4f}")
 
     본것 = 이전기록()
     새것 = 신규만(기사, 본것)

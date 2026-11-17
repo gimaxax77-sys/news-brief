@@ -152,6 +152,101 @@ def 핫뉴스(기사: list[dict], 몇건: int) -> list[dict]:
     return 고른것[:몇건]
 
 
+# --- 같은 화제 접기 (2026-11-17 Gim «유사하거나 비슷한 것들 건수만 늘어나지 않게» → «한 칸으로 접기») ---
+# 같은 보도자료 도배는 collect.한사건씩 이 제목으로 줄입니다. 하지만 «앤스로픽 상장»처럼 **서로 다른 기사가
+# 같은 화제로 쌓이는 것**(11-17 실측 15건, 영어 · 한국어 섞임)은 제목 글자로 못 묶습니다.
+# 그래서 실행마다 한 번, 한국어 한 줄(요약 > 번역 제목 > 원제목)을 모델에 보여 주고 화제끼리 번호를 묶게 합니다.
+# 기사는 버리지 않습니다 — 화면에서 대표 1건 밑에 «관련 N건»으로 접힐 뿐입니다.
+# ⛔ «같은 화제»만 말하면 모델이 **주제가 비슷한 다른 글**까지 묶습니다(11-17 첫 실행: 21묶음 중 약 절반 —
+#    «클로드 기능 업데이트»에 릴리스 노트 · 새 모델 발표 · 다른 회사 MCP 출시가, «AI 에이전트 코딩»에 서로 다른
+#    후기 6편이, «네이버 AI 기술»에 다른 기술 블로그 글 3편이 묶임). 그래서 «한 가지 사실» 기준과 빼는 보기를 둡니다.
+화제지시 = (
+    "너는 IT 뉴스 브리핑 편집자다. 아래 기사 가운데 **같은 사건 하나**를 전하는 기사끼리만 묶는다.\n"
+    "- 같은 사건 = 같은 발표 · 사고 · 거래 · 결정 하나. 관점 · 매체 · 언어가 달라도 그 한 가지를 다루면 같다.\n"
+    "  보기) 앤스로픽 상장 기사 여럿 / 삼성 갤럭시 XR 교실 도입 보도 여럿 / 같은 장애의 원인 기사 둘.\n"
+    "- ⛔ 주제 · 분야 · 회사만 같고 **전하는 사실이 다르면 묶지 않는다.**\n"
+    "  묶지 않는 보기) 같은 회사의 서로 다른 발표(새 모델 ↔ 릴리스 노트 ↔ 새 기능) / 서로 다른 사용 후기 ·\n"
+    "  개발기 · 튜토리얼 · 칼럼 / 한 회사 기술 블로그의 다른 글들 / 비슷한 분야 다른 회사 제품.\n"
+    "- 애매하면 묶지 않는다. 잘못 묶으면 기사가 숨어 버려, 안 묶는 것보다 훨씬 나쁘다.\n"
+    "- [ ] 안 분야가 같은 것끼리만 묶는다.\n"
+    "- 2건 이상인 사건만 적는다. 묶을 것이 없으면 아무것도 출력하지 않는다.\n"
+    "\n"
+    "출력 형식 — 화제마다 한 줄, 다른 말은 붙이지 않는다.\n"
+    "화제 이름 15자 이내|번호,번호,번호\n"
+    "보기)\n"
+    "앤스로픽 상장|3,8,15,22\n"
+    "갤럭시 XR 교육|5,9"
+)
+화제상한 = 400   # 이보다 많으면 앞에서부터 이만큼만 묶습니다(입력이 커지면 값이 오릅니다)
+# 1M 토큰당 달러(2026-11 기준). 비용 줄이 실제 청구와 맞도록 모델마다 둡니다.
+화제단가 = {"claude-haiku-4-5": 단가, "claude-haiku-5-5": {"in": 0.10, "out": 0.50},
+            "claude-sonnet-5-5": {"in": 2.0, "out": 10.0}}
+# 11-17 같은 수집분 대조 — Haiku 4.5 는 지시를 조여도 «앤스로픽 상장»에 새 모델 발표 · 이직 소식을,
+#   «교육용 AI»에 서로 다른 행사 9건을 묶었다($0.015/회). Haiku 5.5(생각 low)는 11묶음 모두 같은 소식 ·
+#   애매한 2건은 안 묶음 · $0.004/회(하루 8회 약 월 $1).
+화제모델 = "claude-haiku-5-5"
+화제노력 = "low"   # output_config.effort — 생각을 하는 모델에만 넣습니다
+
+
+def _화제글(g: dict) -> str:
+    return (g.get("summary") or g.get("ko") or g["title"]).strip()
+
+
+def 화제읽기(답: str, 후보: list[dict]) -> int:
+    """모델 답을 읽어 `g["화제"] = (이름, 번호)` 를 답니다. 묶인 화제 수를 돌려줍니다.
+
+    한 기사가 두 화제에 나오면 먼저 나온 화제에 둡니다. 분야가 다른 것이 섞이면 첫 기사의 분야만 남깁니다.
+    """
+    쓴것, 화제수 = set(), 0
+    for 줄 in 답.splitlines():
+        이름, 칸, 번호들 = 줄.rpartition("|")
+        if not 칸:
+            continue
+        이름 = re.sub(r"^\s*[-*\d.)\s]+(?=\D)", "", 이름).strip()[:20] or "같은 화제"
+        식구 = []
+        for n in re.findall(r"\d+", 번호들):
+            i = int(n) - 1
+            if 0 <= i < len(후보) and i not in 쓴것:
+                식구.append(i)
+        if 식구:
+            분야 = 후보[식구[0]]["topic"]
+            식구 = [i for i in 식구 if 후보[i]["topic"] == 분야]
+        if len(식구) < 2:
+            continue
+        화제수 += 1
+        for i in 식구:
+            쓴것.add(i)
+            후보[i]["화제"] = (이름, 화제수)
+    return 화제수
+
+
+def 화제묶기(기사: list[dict]) -> dict:
+    """같은 화제 기사에 `g["화제"]` 를 답니다. 실패하면 아무것도 안 달고 화면은 그대로 돕니다."""
+    잰것 = {"화제": 0, "접힘": 0, "비용": 0.0}
+    for g in 기사:
+        g.pop("화제", None)
+    후보 = 기사[:화제상한]
+    if len(후보) < 2 or not os.environ.get("ANTHROPIC_API_KEY"):
+        return 잰것
+    본문 = "\n".join(f"{i+1}. [{g['topic']}] {_화제글(g)}" for i, g in enumerate(후보))
+    try:
+        import anthropic
+        덧: dict = {"output_config": {"effort": 화제노력}} if 화제노력 else {}
+        m = anthropic.Anthropic().messages.create(
+            model=화제모델, max_tokens=8000, system=화제지시,
+            messages=[{"role": "user", "content": 본문}], **덧)
+        답 = "".join(b.text for b in m.content if b.type == "text")
+        값 = 화제단가.get(화제모델, 단가)
+        잰것["비용"] = (m.usage.input_tokens / 1e6 * 값["in"]
+                     + m.usage.output_tokens / 1e6 * 값["out"])
+    except Exception as e:
+        print(f"  (화제 묶기 실패, 접지 않고 그대로 둡니다: {e})")
+        return 잰것
+    잰것["화제"] = 화제읽기(답, 후보)
+    잰것["접힘"] = sum(1 for g in 후보 if g.get("화제")) - 잰것["화제"]
+    return 잰것
+
+
 제목캐시 = "titles.json"   # {지문: 한글 제목}
 제목묶음 = 25              # 한 호출에 몇 개씩 넣을지. 제목은 짧아 묶어 보내는 편이 훨씬 쌉니다.
 _한글 = re.compile(r"[가-힣]")
@@ -265,11 +360,19 @@ def 핫기록(고른것: list[dict], 지금: dt.datetime, path: str = 핫캐시)
     return 남길
 
 
+# ⛔ 모델이 판정 결과 «싣는다.»를 요약 앞에 붙여 내는 일이 있습니다(11-17 캐시 218건 중 5건 — 화면에 «싣는다.»가 그대로 나옴).
+_판정새김 = re.compile(r"^\s*(싣는다|싣음|싣기)[.。]?\s*")
+
+
+def 다듬기(글: str) -> str:
+    return _판정새김.sub("", 글).strip() if isinstance(글, str) else 글
+
+
 def 이전요약(path: str = CACHE) -> dict:
     try:
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
+            return {k: 다듬기(v) for k, v in json.load(f).items()}   # 지난 캐시에 남은 것도 여기서 지움
+    except (OSError, ValueError, AttributeError):
         return {}
 
 
@@ -287,7 +390,7 @@ def _한건(client, g: dict) -> tuple[str, str, int, int, bool]:
     쓸지시 = 지시_요약만 if g.get("source") in 판정면제 else 지시
     m = client.messages.create(model=MODEL, max_tokens=MAX_TOKENS, system=쓸지시,
                                messages=[{"role": "user", "content": 본문}])
-    글 = "".join(b.text for b in m.content if b.type == "text").strip()
+    글 = 다듬기("".join(b.text for b in m.content if b.type == "text"))
     입, 출, 줄였다 = m.usage.input_tokens, m.usage.output_tokens, False
 
     if len(글) > 줄임한계:

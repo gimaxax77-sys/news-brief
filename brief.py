@@ -1,5 +1,6 @@
 # 수집 → 신규 판정 → 화면 생성 → 텔레그램 알림. 스케줄러가 2시간마다 이 파일을 부릅니다.
 import datetime as dt
+import json  # 뉴스 방 목록 읽기(타세션 승인됨 11-22)
 import os
 import sys
 
@@ -24,10 +25,24 @@ KST = dt.timezone(dt.timedelta(hours=9))
 아침상한 = 8   # 09시 알림은 8시간치라 조금 더 담습니다
 
 
+# 뉴스 전용 그룹 «뉴스 브리핑»(2026-11-22 Gim · 77 세션이 고침 — 타세션 승인됨).
+# 방 번호는 공용 텔레그램 도구의 방 목록(저장소 밖)에 «뉴스»로 있습니다.
+# 목록이 없거나 «뉴스»가 없으면 .env 의 TELEGRAM_CHAT_ID(옛 봇 1:1 대화)로 보냅니다.
+방목록 = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "_TOOLS", "tg-notify", "rooms.local.json")
+
+
+def 방번호(목록: str = 방목록) -> str | None:
+    try:
+        with open(목록, encoding="utf-8") as f:
+            return json.load(f).get("뉴스") or None
+    except (OSError, ValueError):
+        return None
+
+
 def 알림(text: str) -> None:
     """텔레그램으로 한 통 보냅니다. 키가 없으면 아무 일도 하지 않습니다."""
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat = os.environ.get("TELEGRAM_CHAT_ID")
+    chat = os.environ.get("TELEGRAM_CHAT_ID") and (방번호() or os.environ.get("TELEGRAM_CHAT_ID"))
     if not (token and chat):
         return
     try:

@@ -443,6 +443,21 @@ brief.알림("보내면 안 됨")
 assert 보낸것 == [], "키가 없는데 전송했습니다"
 brief.requests.post = 원래
 
+# --- 보낼 방: 방 목록의 «뉴스»가 있으면 그 방, 없거나 깨졌으면 없음(→ .env 방) (11-22 · 타세션 승인됨) ---
+import tempfile  # noqa: E402
+with tempfile.TemporaryDirectory() as 임시:
+    목록 = os.path.join(임시, "rooms.json")
+    with open(목록, "w", encoding="utf-8") as f:
+        f.write('{"나노봇": "-1001", "뉴스": "-1002"}')
+    assert brief.방번호(목록) == "-1002", "방 목록의 «뉴스» 방을 못 읽었습니다"
+    with open(목록, "w", encoding="utf-8") as f:
+        f.write('{"나노봇": "-1001"}')
+    assert brief.방번호(목록) is None, "«뉴스»가 없는데 다른 방을 골랐습니다"
+    with open(목록, "w", encoding="utf-8") as f:
+        f.write("깨진 글")
+    assert brief.방번호(목록) is None, "깨진 목록에서 멈췄습니다"
+    assert brief.방번호(os.path.join(임시, "없음.json")) is None, "목록이 없을 때 멈췄습니다"
+
 # --- 요약 줄이기: 긴 요약만 한 번 더 불러 줄인다 (망 접속 없이 가짜 client 로) ---
 # ⛔ 이 장치가 있는 이유 — 길이 규칙을 요약 지시문에 넣으면 **판정까지 조여진다.**
 #    2026-08-08 실측: 「50자를 넘기지 않는다」를 넣자 분야 밖 판정이 8→15건으로 늘고
